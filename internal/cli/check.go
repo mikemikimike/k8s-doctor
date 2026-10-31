@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rbalukja15/k8s-doctor/internal/config"
+	"github.com/rbalukja15/k8s-doctor/internal/llm"
 	"github.com/rbalukja15/k8s-doctor/internal/report"
 	"github.com/rbalukja15/k8s-doctor/internal/rules"
 	"github.com/rbalukja15/k8s-doctor/internal/rules/checks"
@@ -133,12 +135,27 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 		return 0, err
 	}
 	res := engine.Run(snap)
-	// The LLM layer (#26) does not exist yet, so every run is effectively
-	// --no-llm and the report says so.
+	explanations := map[string]string{}
+	llmEnabled := !o.noLLM && cfg.LLM.Provider != ""
+	if llmEnabled {
+		provider, err := llm.NewFromConfig(cfg.LLM, env.Getenv)
+		if err != nil {
+			return 0, err
+		}
+		for _, finding := range res.Findings {
+			rule, _ := reg.Get(finding.RuleID)
+			prompt := llm.BuildPrompt(finding, rule.Description(), *snap)
+			text, explainErr := provider.Explain(context.Background(), prompt)
+			if explainErr == nil && text != "" {
+				explanations[finding.ID] = text
+			}
+		}
+	}
 	rep := report.Build(snap, reg, engine, res, report.Options{
-		Version: version.Version,
-		Now:     time.Now(),
-		LLM:     false,
+		Version:      version.Version,
+		Now:          time.Now(),
+		LLM:          llmEnabled,
+		Explanations: explanations,
 	})
 
 	if o.reportPath != "" {
