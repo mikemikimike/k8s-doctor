@@ -28,7 +28,7 @@ flowchart LR
 | Built-in rules | `internal/rules/checks` | #11, #12, #13 | Batch 1 done |
 | Fixtures and runner | `fixtures/`, `internal/fixtures` | #15 | Done |
 | Overlay drift | — | #14, #28–#30 | Planned |
-| LLM client, redaction, `--no-llm` | `internal/llm` | #26 | Planned |
+| LLM client, redaction, `--no-llm` | `internal/llm` | #26 | Implemented |
 | Explain / correlate | `internal/llm` | #16, #17 | Planned |
 | Patch drafting | — | #18 | Planned |
 | JSON + terminal report, CLI | `internal/report`, `internal/cli` | #20 | Done |
