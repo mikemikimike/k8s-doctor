@@ -3,15 +3,16 @@ package cli_test
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rbalukja15/k8s-doctor/internal/cli"
+	"github.com/rbalukja15/k8s-doctor/internal/llm"
 	"github.com/rbalukja15/k8s-doctor/internal/report"
 )
 
@@ -204,11 +205,11 @@ func TestLLMFailureWarnsAndFallsBackToRuleExplanation(t *testing.T) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
-	configPath := writeLLMConfig(t, server.URL)
+	configPath := writeLLMConfig(t)
 
 	var out, errOut bytes.Buffer
-	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
-	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json"}, env)
+	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: llmTestEnv(server.URL)}
+	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json", "--llm"}, env)
 	if code != cli.ExitFindingHigh {
 		t.Fatalf("code %d, want finding exit code; stderr %q", code, errOut.String())
 	}
@@ -236,11 +237,11 @@ func TestLLMSuccessMarksReportUsed(t *testing.T) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"A generated explanation."}}]}`))
 	}))
 	defer server.Close()
-	configPath := writeLLMConfig(t, server.URL)
+	configPath := writeLLMConfig(t)
 
 	var out, errOut bytes.Buffer
-	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
-	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json"}, env)
+	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: llmTestEnv(server.URL)}
+	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json", "--llm"}, env)
 	if code != cli.ExitFindingHigh {
 		t.Fatalf("code %d, want finding exit code; stderr %q", code, errOut.String())
 	}
@@ -256,12 +257,45 @@ func TestLLMSuccessMarksReportUsed(t *testing.T) {
 	}
 }
 
-func writeLLMConfig(t *testing.T, endpoint string) string {
+func TestLLMConfigRequiresExplicitOptIn(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		http.Error(w, "unexpected call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	configPath := writeLLMConfig(t)
+
+	var out, errOut bytes.Buffer
+	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: llmTestEnv(server.URL)}
+	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json"}, env)
+	if code != cli.ExitFindingHigh {
+		t.Fatalf("code %d, want finding exit code; stderr %q", code, errOut.String())
+	}
+	var got report.Report
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if got.Input.LLM || calls.Load() != 0 || errOut.Len() != 0 {
+		t.Fatalf("LLM was not kept opt-in: used=%t calls=%d stderr=%q", got.Input.LLM, calls.Load(), errOut.String())
+	}
+}
+
+func writeLLMConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	data := []byte(fmt.Sprintf("llm:\n  provider: openai-compatible\n  endpoint: %q\n  model: test\n  retries: 0\n", endpoint))
+	data := []byte("llm:\n  provider: openai-compatible\n  model: test\n  retries: 0\n")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func llmTestEnv(endpoint string) func(string) string {
+	return func(name string) string {
+		if name == llm.EndpointEnv {
+			return endpoint
+		}
+		return ""
+	}
 }

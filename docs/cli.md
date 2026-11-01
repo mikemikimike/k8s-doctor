@@ -49,17 +49,23 @@ Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doc
 | `--fail-on` | `high` | Lowest severity that makes the exit code non-zero: `critical`, `high`, `medium`, `low` or `none`. |
 | `--color` | `auto` | `auto` (only on a terminal, and never when `NO_COLOR` is set), `always` or `never`. |
 | `--explain` | off | Print each finding's explanation under it in text output. |
+| `--llm` | off | Send redacted finding context to the configured LLM provider. Requires an `llm.provider` in the config. |
 | `--no-llm` | off | Never call an LLM; explanations use deterministic rule descriptions and the report's `input.llm` is `false`. |
 
 When `.k8s-doctor.yaml` contains an `llm` block, the `openai-compatible`
-provider (also accepted as `openai`) uses `endpoint`, `model`, optional
-`apiKeyEnv`, `timeout` and `retries`. The default request timeout is 30 seconds;
-the explanation phase has a two-minute overall deadline. Prompts are redacted,
-include explicit instructions to treat cluster data as untrusted, and cap
-context at 32 KiB. Provider errors fall back to the rule description and produce
-a warning on stderr. `input.llm` is true only when at least one generated
-explanation is included in the report. The default configuration has no
-provider and is offline.
+provider (also accepted as `openai`) uses `model`, optional `timeout` and
+`retries`. Set `K8S_DOCTOR_LLM_ENDPOINT` and, when required, the
+`K8S_DOCTOR_LLM_API_KEY` environment variable outside the repository config.
+The endpoint must use HTTPS; HTTP is allowed only for loopback development.
+Provider calls are disabled unless `--llm` is passed, and `--no-llm` always
+disables them. The default request timeout is 30 seconds, with three retries
+using exponential backoff; 429 responses honor `Retry-After` values up to two
+minutes and skip retrying when the requested delay is longer. The explanation
+phase has a two-minute overall deadline. Prompts are redacted, include explicit
+instructions to treat cluster data as untrusted, and cap context at 32 KiB.
+Provider errors fall back to the rule description and produce a warning on
+stderr. `input.llm` is true only when at least one generated explanation is
+included in the report. The default configuration is offline.
 
 ## Exit codes
 

@@ -14,6 +14,7 @@ import (
 	"github.com/rbalukja15/k8s-doctor/internal/report"
 	"github.com/rbalukja15/k8s-doctor/internal/rules"
 	"github.com/rbalukja15/k8s-doctor/internal/rules/checks"
+	"github.com/rbalukja15/k8s-doctor/internal/snapshot"
 	"github.com/rbalukja15/k8s-doctor/internal/version"
 )
 
@@ -63,6 +64,7 @@ type checkOptions struct {
 	reportPath string
 	failOn     string
 	color      string
+	llm        bool
 	noLLM      bool
 	explain    bool
 	enable     listFlag
@@ -83,6 +85,7 @@ func check(args []string, env Env) int {
 	fs.StringVar(&o.reportPath, "report", "", "also write the JSON report to this file")
 	fs.StringVar(&o.failOn, "fail-on", "high", "lowest severity that makes the exit code non-zero: critical, high, medium, low or none")
 	fs.StringVar(&o.color, "color", "auto", "colorize text output: auto, always or never (NO_COLOR is honored)")
+	fs.BoolVar(&o.llm, "llm", false, "use the configured LLM explanation provider")
 	fs.BoolVar(&o.noLLM, "no-llm", false, "never call an LLM; explanations come from rule descriptions")
 	fs.BoolVar(&o.explain, "explain", false, "print each finding's explanation in text output")
 	fs.Var(&o.enable, "enable-rule", "enable rules by ID (repeatable, comma-separated)")
@@ -141,7 +144,7 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 	}
 	res := engine.Run(snap)
 	explanations := map[string]string{}
-	llmEnabled := !o.noLLM && cfg.LLM.Provider != ""
+	llmEnabled := o.llm && !o.noLLM && cfg.LLM.Provider != ""
 	llmUsed := false
 	if llmEnabled {
 		provider, err := llm.NewFromConfig(cfg.LLM, env.Getenv)
