@@ -3,6 +3,9 @@ package cli_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,4 +198,70 @@ func TestSnapshotCommand(t *testing.T) {
 	if code, _, _ := run("snapshot", "--snapshot", clean); code != cli.ExitUsage {
 		t.Errorf("--snapshot should not be a snapshot flag, code %d", code)
 	}
+}
+func TestLLMFailureWarnsAndFallsBackToRuleExplanation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	configPath := writeLLMConfig(t, server.URL)
+
+	var out, errOut bytes.Buffer
+	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
+	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json"}, env)
+	if code != cli.ExitFindingHigh {
+		t.Fatalf("code %d, want finding exit code; stderr %q", code, errOut.String())
+	}
+	var got report.Report
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if got.Input.LLM {
+		t.Error("report claims LLM was used although all requests failed")
+	}
+	if len(got.Findings) == 0 || got.Findings[0].Explanation.Source != report.SourceRule {
+		t.Fatalf("explanation did not fall back to rule text: %+v", got.Findings)
+	}
+	if !strings.Contains(errOut.String(), "warning: LLM explanations failed for ") || !strings.Contains(errOut.String(), "using rule descriptions") {
+		t.Fatalf("missing fallback warning: %q", errOut.String())
+	}
+	if strings.Contains(errOut.String(), "unavailable") {
+		t.Fatal("warning exposed the provider response body")
+	}
+}
+
+func TestLLMSuccessMarksReportUsed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"A generated explanation."}}]}`))
+	}))
+	defer server.Close()
+	configPath := writeLLMConfig(t, server.URL)
+
+	var out, errOut bytes.Buffer
+	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
+	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--format", "json"}, env)
+	if code != cli.ExitFindingHigh {
+		t.Fatalf("code %d, want finding exit code; stderr %q", code, errOut.String())
+	}
+	var got report.Report
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if !got.Input.LLM || len(got.Findings) == 0 || got.Findings[0].Explanation.Source != report.SourceLLM {
+		t.Fatalf("successful explanation not reflected in report: input=%+v findings=%+v", got.Input, got.Findings)
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected warning on success: %q", errOut.String())
+	}
+}
+
+func writeLLMConfig(t *testing.T, endpoint string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(fmt.Sprintf("llm:\n  provider: openai-compatible\n  endpoint: %q\n  model: test\n  retries: 0\n", endpoint))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

@@ -37,6 +37,11 @@ Flags:
 // errUsage marks errors that should exit with ExitUsage.
 var errUsage = errors.New("usage")
 
+const (
+	llmExplanationDeadline = 2 * time.Minute
+	llmExplanationWorkers  = 4
+)
+
 // listFlag is a repeatable, comma-separated string flag.
 type listFlag []string
 
@@ -137,24 +142,23 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 	res := engine.Run(snap)
 	explanations := map[string]string{}
 	llmEnabled := !o.noLLM && cfg.LLM.Provider != ""
+	llmUsed := false
 	if llmEnabled {
 		provider, err := llm.NewFromConfig(cfg.LLM, env.Getenv)
 		if err != nil {
 			return 0, err
 		}
-		for _, finding := range res.Findings {
-			rule, _ := reg.Get(finding.RuleID)
-			prompt := llm.BuildPrompt(finding, rule.Description(), *snap)
-			text, explainErr := provider.Explain(context.Background(), prompt)
-			if explainErr == nil && text != "" {
-				explanations[finding.ID] = text
-			}
+		var failed int
+		explanations, failed = explainFindings(provider, res.Findings, reg, *snap)
+		llmUsed = len(explanations) > 0
+		if failed > 0 {
+			fmt.Fprintf(env.Stderr, "warning: LLM explanations failed for %d of %d findings; using rule descriptions\n", failed, len(res.Findings))
 		}
 	}
 	rep := report.Build(snap, reg, engine, res, report.Options{
 		Version:      version.Version,
 		Now:          time.Now(),
-		LLM:          llmEnabled,
+		LLM:          llmUsed,
 		Explanations: explanations,
 	})
 
@@ -177,6 +181,56 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 		return ExitOK, nil
 	}
 	return ExitCodeFor(worst), nil
+}
+
+type explanationResult struct {
+	id   string
+	text string
+	err  error
+}
+
+func explainFindings(provider llm.Client, findings []rules.Finding, reg *rules.Registry, snap snapshot.Snapshot) (map[string]string, int) {
+	explanations := make(map[string]string, len(findings))
+	if len(findings) == 0 {
+		return explanations, 0
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), llmExplanationDeadline)
+	defer cancel()
+
+	jobs := make(chan rules.Finding, len(findings))
+	results := make(chan explanationResult, len(findings))
+	for _, finding := range findings {
+		jobs <- finding
+	}
+	close(jobs)
+
+	workers := min(llmExplanationWorkers, len(findings))
+	for range workers {
+		go func() {
+			for finding := range jobs {
+				rule, ok := reg.Get(finding.RuleID)
+				if !ok {
+					results <- explanationResult{id: finding.ID, err: fmt.Errorf("rule %q is not registered", finding.RuleID)}
+					continue
+				}
+				prompt := llm.BuildPrompt(finding, rule.Description(), snap)
+				text, err := provider.Explain(ctx, prompt)
+				results <- explanationResult{id: finding.ID, text: text, err: err}
+			}
+		}()
+	}
+
+	failed := 0
+	for range findings {
+		result := <-results
+		if result.err != nil || result.text == "" {
+			failed++
+			continue
+		}
+		explanations[result.id] = result.text
+	}
+	return explanations, failed
 }
 
 // parseFailOn returns the threshold severity, or 0 for "none".

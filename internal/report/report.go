@@ -53,7 +53,7 @@ type Input struct {
 	Cluster string        `json:"cluster,omitempty"`
 	Path    string        `json:"path,omitempty"`
 	Overlay string        `json:"overlay,omitempty"`
-	// LLM reports whether the LLM layer was enabled for this run.
+	// LLM reports whether at least one finding received an LLM explanation.
 	LLM bool `json:"llm"`
 }
 

@@ -51,11 +51,15 @@ Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doc
 | `--explain` | off | Print each finding's explanation under it in text output. |
 | `--no-llm` | off | Never call an LLM; explanations use deterministic rule descriptions and the report's `input.llm` is `false`. |
 
-When `.k8s-doctor.yaml` contains an `llm` block, the supported `openai-compatible`
-provider uses `endpoint`, `model`, optional `apiKeyEnv`, `timeout` and `retries`.
-Every request is redacted before it leaves the process, successful explanations
-are cached by finding and prompt hash, and provider errors fall back to the rule
-description. The default configuration has no provider and is offline.
+When `.k8s-doctor.yaml` contains an `llm` block, the `openai-compatible`
+provider (also accepted as `openai`) uses `endpoint`, `model`, optional
+`apiKeyEnv`, `timeout` and `retries`. The default request timeout is 30 seconds;
+the explanation phase has a two-minute overall deadline. Prompts are redacted,
+include explicit instructions to treat cluster data as untrusted, and cap
+context at 32 KiB. Provider errors fall back to the rule description and produce
+a warning on stderr. `input.llm` is true only when at least one generated
+explanation is included in the report. The default configuration has no
+provider and is offline.
 
 ## Exit codes
 
