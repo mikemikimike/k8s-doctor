@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,7 +29,13 @@ var (
 )
 
 const (
+	EndpointEnv           = "K8S_DOCTOR_LLM_ENDPOINT" // EndpointEnv names the environment variable holding the provider URL.
+	APIKeyEnv             = "K8S_DOCTOR_LLM_API_KEY"  // APIKeyEnv names the environment variable holding the provider key.
 	DefaultRequestTimeout = 30 * time.Second
+	DefaultRetries        = 3 // DefaultRetries is the number of retries when config omits retries.
+	initialRetryBackoff   = time.Second
+	maxRetryBackoff       = 30 * time.Second
+	maxRetryAfter         = 2 * time.Minute
 	maxContextBytes       = 32 * 1024
 	maxContextItems       = 10
 	maxResponseBytes      = 1 << 20
@@ -228,7 +237,7 @@ type Client interface {
 }
 
 // HTTPClient is a small OpenAI-compatible chat client. It retries transient
-// transport and 5xx failures, while honoring the caller's context deadline.
+// transport, 429 and 5xx failures, while honoring the caller's context deadline.
 type HTTPClient struct {
 	Endpoint string
 	Model    string
@@ -275,6 +284,7 @@ func (c *HTTPClient) Explain(ctx context.Context, p Prompt) (string, error) {
 	}
 	var last error
 	for attempt := 0; attempt <= retries; attempt++ {
+		retryAfter := ""
 		requestCtx, cancel := context.WithTimeout(ctx, timeout)
 		req, reqErr := http.NewRequestWithContext(requestCtx, http.MethodPost, c.Endpoint, bytes.NewReader(body))
 		if reqErr != nil {
@@ -304,6 +314,9 @@ func (c *HTTPClient) Explain(ctx context.Context, p Prompt) (string, error) {
 				last = closeErr
 			case len(data) > maxResponseBytes:
 				return "", fmt.Errorf("llm provider response exceeds %d bytes", maxResponseBytes)
+			case resp.StatusCode == http.StatusTooManyRequests:
+				last = fmt.Errorf("llm provider returned %s", resp.Status)
+				retryAfter = resp.Header.Get("Retry-After")
 			case resp.StatusCode >= 500:
 				last = fmt.Errorf("llm provider returned %s", resp.Status)
 			case resp.StatusCode < 200 || resp.StatusCode >= 300:
@@ -321,14 +334,57 @@ func (c *HTTPClient) Explain(ctx context.Context, p Prompt) (string, error) {
 			}
 		}
 		if attempt < retries {
+			delay, shouldRetry := retryDelay(attempt, retryAfter, time.Now())
+			if !shouldRetry {
+				return "", last
+			}
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				return "", ctx.Err()
-			case <-time.After(time.Duration(attempt+1) * 25 * time.Millisecond):
+			case <-timer.C:
 			}
 		}
 	}
 	return "", last
+}
+
+func retryDelay(attempt int, retryAfter string, now time.Time) (time.Duration, bool) {
+	if retryAfter != "" {
+		if seconds, err := strconv.ParseInt(strings.TrimSpace(retryAfter), 10, 64); err == nil && seconds >= 0 {
+			if seconds > int64(maxRetryAfter/time.Second) {
+				return 0, false
+			}
+			return time.Duration(seconds) * time.Second, true
+		}
+		if retryAt, err := http.ParseTime(retryAfter); err == nil {
+			delay := retryAt.Sub(now)
+			if delay < 0 {
+				delay = 0
+			}
+			if delay > maxRetryAfter {
+				return 0, false
+			}
+			return delay, true
+		}
+	}
+	if attempt < 0 {
+		attempt = 0
+	}
+	delay := initialRetryBackoff
+	for range attempt {
+		if delay >= maxRetryBackoff/2 {
+			return maxRetryBackoff, true
+		}
+		delay *= 2
+	}
+	return delay, true
 }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
@@ -342,8 +398,17 @@ func NewFromConfig(cfg config.LLM, getenv func(string) string) (Client, error) {
 	if !strings.EqualFold(cfg.Provider, "openai-compatible") && !strings.EqualFold(cfg.Provider, "openai") {
 		return nil, fmt.Errorf("unsupported llm provider %q", cfg.Provider)
 	}
-	if cfg.Endpoint == "" || cfg.Model == "" {
-		return nil, errors.New("llm endpoint and model are required when a provider is configured")
+	if cfg.Model == "" {
+		return nil, errors.New("llm model is required when a provider is configured")
+	}
+	endpoint := ""
+	apiKey := ""
+	if getenv != nil {
+		endpoint = getenv(EndpointEnv)
+		apiKey = getenv(APIKeyEnv)
+	}
+	if err := validateEndpoint(endpoint); err != nil {
+		return nil, err
 	}
 	timeout := DefaultRequestTimeout
 	if cfg.Timeout != "" {
@@ -356,9 +421,33 @@ func NewFromConfig(cfg config.LLM, getenv func(string) string) (Client, error) {
 		}
 		timeout = parsed
 	}
-	apiKey := ""
-	if cfg.APIKeyEnv != "" && getenv != nil {
-		apiKey = getenv(cfg.APIKeyEnv)
+	retries := DefaultRetries
+	if cfg.Retries != nil {
+		if *cfg.Retries < 0 {
+			return nil, errors.New("llm retries must not be negative")
+		}
+		retries = *cfg.Retries
 	}
-	return &HTTPClient{Endpoint: cfg.Endpoint, Model: cfg.Model, APIKey: apiKey, Timeout: timeout, Retries: cfg.Retries}, nil
+	return &HTTPClient{Endpoint: endpoint, Model: cfg.Model, APIKey: apiKey, Timeout: timeout, Retries: retries}, nil
+}
+
+func validateEndpoint(raw string) error {
+	endpoint, err := url.Parse(raw)
+	if err != nil || !endpoint.IsAbs() || endpoint.Hostname() == "" || endpoint.User != nil {
+		return errors.New("llm endpoint must be an absolute HTTPS URL or an HTTP loopback URL")
+	}
+	if endpoint.Scheme == "https" {
+		return nil
+	}
+	if endpoint.Scheme == "http" && isLoopbackHost(endpoint.Hostname()) {
+		return nil
+	}
+	return errors.New("llm endpoint must use HTTPS; HTTP is allowed only for loopback")
+}
+
+func isLoopbackHost(host string) bool {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return strings.EqualFold(strings.TrimSuffix(host, "."), "localhost")
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,59 @@ func TestHTTPClientRetriesAndRedactsResponse(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRetriesRateLimitAndHonorsRetryAfter(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"recovered"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := &HTTPClient{Endpoint: srv.URL, Model: "test", Retries: 1}
+	start := time.Now()
+	got, err := client.Explain(context.Background(), Prompt{Description: "desc"})
+	if err != nil || got != "recovered" {
+		t.Fatalf("Explain = %q, %v; want successful retry", got, err)
+	}
+	if elapsed := time.Since(start); elapsed < 900*time.Millisecond {
+		t.Fatalf("retry after 429 took %s, want at least one second", elapsed)
+	}
+	if calls != 2 {
+		t.Fatalf("requests = %d, want retry after 429", calls)
+	}
+}
+
+func TestRetryDelay(t *testing.T) {
+	now := time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		after   string
+		attempt int
+		want    time.Duration
+		ok      bool
+	}{
+		{attempt: 0, want: time.Second, ok: true},
+		{attempt: 1, want: 2 * time.Second, ok: true},
+		{attempt: 2, want: 4 * time.Second, ok: true},
+		{attempt: 10, want: maxRetryBackoff, ok: true},
+		{after: "5", attempt: 0, want: 5 * time.Second, ok: true},
+		{after: now.Add(7 * time.Second).Format(http.TimeFormat), want: 7 * time.Second, ok: true},
+		{after: now.Add(-time.Second).Format(http.TimeFormat), want: 0, ok: true},
+		{after: strconv.FormatInt(int64(maxRetryAfter/time.Second)+1, 10), ok: false},
+	}
+	for _, test := range tests {
+		got, ok := retryDelay(test.attempt, test.after, now)
+		if got != test.want || ok != test.ok {
+			t.Errorf("retryDelay(%d, %q) = (%s, %t), want (%s, %t)", test.attempt, test.after, got, ok, test.want, test.ok)
+		}
+	}
+}
+
 func TestHTTPClientRejectsNonRetryableStatus(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -207,23 +261,37 @@ func TestNewFromConfig(t *testing.T) {
 	if client, err := NewFromConfig(config.LLM{}, nil); err == nil || client != nil {
 		t.Fatalf("empty provider returned client %T and err %v, want configuration error", client, err)
 	}
-	client, err := NewFromConfig(config.LLM{Provider: "openai-compatible", Endpoint: "http://localhost", Model: "m", Timeout: "2s", APIKeyEnv: "KEY"}, func(string) string { return "value" })
+	retries := 0
+	env := map[string]string{EndpointEnv: "http://localhost:8080/v1/chat/completions", APIKeyEnv: "value"}
+	client, err := NewFromConfig(config.LLM{Provider: "openai-compatible", Model: "m", Timeout: "2s", Retries: &retries}, func(name string) string { return env[name] })
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpClient, ok := client.(*HTTPClient)
-	if !ok || httpClient.Timeout != 2*time.Second || httpClient.APIKey != "value" {
+	if !ok || httpClient.Endpoint != env[EndpointEnv] || httpClient.Timeout != 2*time.Second || httpClient.APIKey != "value" || httpClient.Retries != 0 {
 		t.Fatalf("unexpected client %#v", client)
 	}
-	client, err = NewFromConfig(config.LLM{Provider: "openai", Endpoint: "http://localhost", Model: "m"}, nil)
+	client, err = NewFromConfig(config.LLM{Provider: "openai", Model: "m"}, func(name string) string {
+		if name == EndpointEnv {
+			return "https://provider.example/v1/chat/completions"
+		}
+		return ""
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpClient, ok = client.(*HTTPClient)
-	if !ok || httpClient.Timeout != DefaultRequestTimeout {
-		t.Fatalf("default timeout client = %#v, want %s", client, DefaultRequestTimeout)
+	if !ok || httpClient.Timeout != DefaultRequestTimeout || httpClient.Retries != DefaultRetries {
+		t.Fatalf("default client = %#v, want timeout %s and %d retries", client, DefaultRequestTimeout, DefaultRetries)
 	}
-	if _, err := NewFromConfig(config.LLM{Provider: "openai-compatible", Endpoint: "http://localhost", Model: "m", Timeout: "0s"}, nil); err == nil {
+	if _, err := NewFromConfig(config.LLM{Provider: "openai-compatible", Model: "m", Timeout: "0s"}, func(string) string { return "https://provider.example" }); err == nil {
 		t.Fatal("zero timeout was accepted")
+	}
+	if _, err := NewFromConfig(config.LLM{Provider: "openai-compatible", Model: "m"}, func(string) string { return "http://provider.example" }); err == nil {
+		t.Fatal("non-loopback HTTP endpoint was accepted")
+	}
+	negativeRetries := -1
+	if _, err := NewFromConfig(config.LLM{Provider: "openai-compatible", Model: "m", Retries: &negativeRetries}, func(string) string { return "https://provider.example" }); err == nil {
+		t.Fatal("negative retry count was accepted")
 	}
 }
