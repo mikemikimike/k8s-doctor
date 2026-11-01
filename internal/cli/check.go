@@ -149,7 +149,9 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 			return 0, err
 		}
 		var failed int
-		explanations, failed = explainFindings(provider, res.Findings, reg, *snap)
+		ctx, cancel := context.WithTimeout(context.Background(), llmExplanationDeadline)
+		explanations, failed = explainFindings(ctx, provider, res.Findings, reg, *snap)
+		cancel()
 		llmUsed = len(explanations) > 0
 		if failed > 0 {
 			fmt.Fprintf(env.Stderr, "warning: LLM explanations failed for %d of %d findings; using rule descriptions\n", failed, len(res.Findings))
@@ -189,14 +191,11 @@ type explanationResult struct {
 	err  error
 }
 
-func explainFindings(provider llm.Client, findings []rules.Finding, reg *rules.Registry, snap snapshot.Snapshot) (map[string]string, int) {
+func explainFindings(ctx context.Context, provider llm.Client, findings []rules.Finding, reg *rules.Registry, snap snapshot.Snapshot) (map[string]string, int) {
 	explanations := make(map[string]string, len(findings))
 	if len(findings) == 0 {
 		return explanations, 0
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), llmExplanationDeadline)
-	defer cancel()
 
 	jobs := make(chan rules.Finding, len(findings))
 	results := make(chan explanationResult, len(findings))
@@ -209,6 +208,10 @@ func explainFindings(provider llm.Client, findings []rules.Finding, reg *rules.R
 	for range workers {
 		go func() {
 			for finding := range jobs {
+				if err := ctx.Err(); err != nil {
+					results <- explanationResult{id: finding.ID, err: err}
+					continue
+				}
 				rule, ok := reg.Get(finding.RuleID)
 				if !ok {
 					results <- explanationResult{id: finding.ID, err: fmt.Errorf("rule %q is not registered", finding.RuleID)}
