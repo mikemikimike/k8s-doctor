@@ -144,7 +144,10 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 	}
 	res := engine.Run(snap)
 	explanations := map[string]string{}
-	llmEnabled := o.llm && !o.noLLM && cfg.LLM.Provider != ""
+	if o.llm && !o.noLLM && cfg.LLM.Provider == "" {
+		return 0, fmt.Errorf("%w: --llm requires llm.provider in the config", errUsage)
+	}
+	llmEnabled := o.llm && !o.noLLM
 	llmUsed := false
 	if llmEnabled {
 		provider, err := llm.NewFromConfig(cfg.LLM, env.Getenv)
