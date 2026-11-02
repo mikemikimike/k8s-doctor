@@ -281,6 +281,23 @@ func TestLLMConfigRequiresExplicitOptIn(t *testing.T) {
 	}
 }
 
+func TestLLMFlagRequiresConfiguredProvider(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("llm:\n  model: test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	env := cli.Env{Stdout: &out, Stderr: &errOut, Getenv: func(string) string { return "" }}
+	code := cli.RunEnv([]string{"check", "--snapshot", highFix, "--config", configPath, "--llm"}, env)
+	if code != cli.ExitUsage {
+		t.Fatalf("code %d, want usage error; stdout=%q stderr=%q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "--llm requires llm.provider") {
+		t.Fatalf("missing provider error: %q", errOut.String())
+	}
+}
+
 func writeLLMConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")

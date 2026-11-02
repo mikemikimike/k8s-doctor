@@ -14,11 +14,13 @@ import (
 )
 
 type deadlineClient struct {
-	calls atomic.Int32
+	calls   atomic.Int32
+	started chan struct{}
 }
 
 func (c *deadlineClient) Explain(ctx context.Context, _ llm.Prompt) (string, error) {
 	c.calls.Add(1)
+	c.started <- struct{}{}
 	<-ctx.Done()
 	return "", ctx.Err()
 }
@@ -55,13 +57,30 @@ func TestExplainFindingsStopsAtOverallDeadline(t *testing.T) {
 	for i := range findings {
 		findings[i] = rules.Finding{ID: "finding-" + strconv.Itoa(i), RuleID: rule.ID(), Severity: rules.SeverityHigh}
 	}
-	client := &deadlineClient{}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-
-	explanations, failures := explainFindings(ctx, client, findings, checks.Registry(), snapshot.Snapshot{})
-	if calls := client.calls.Load(); calls == 0 || calls > llmExplanationWorkers {
-		t.Fatalf("provider calls %d, want between 1 and %d before deadline", calls, llmExplanationWorkers)
+	client := &deadlineClient{started: make(chan struct{}, llmExplanationWorkers)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var explanations map[string]string
+	var failures int
+	go func() {
+		explanations, failures = explainFindings(ctx, client, findings, checks.Registry(), snapshot.Snapshot{})
+		close(done)
+	}()
+	for range llmExplanationWorkers {
+		select {
+		case <-client.started:
+		case <-time.After(time.Second):
+			t.Fatal("worker pool did not start the expected concurrent requests")
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("explanation workers did not stop after cancellation")
+	}
+	if calls := client.calls.Load(); calls != llmExplanationWorkers {
+		t.Fatalf("provider calls %d, want %d before cancellation", calls, llmExplanationWorkers)
 	}
 	if len(explanations) != 0 || failures != len(findings) {
 		t.Fatalf("got explanations %v and %d failures", explanations, failures)
