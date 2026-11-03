@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -62,8 +63,9 @@ func TestExplainFindingsStopsAtOverallDeadline(t *testing.T) {
 	done := make(chan struct{})
 	var explanations map[string]string
 	var failures int
+	var firstFailure error
 	go func() {
-		explanations, failures = explainFindings(ctx, client, findings, checks.Registry(), snapshot.Snapshot{})
+		explanations, failures, firstFailure = explainFindings(ctx, client, findings, checks.Registry(), snapshot.Snapshot{})
 		close(done)
 	}()
 	for range llmExplanationWorkers {
@@ -85,6 +87,9 @@ func TestExplainFindingsStopsAtOverallDeadline(t *testing.T) {
 	if len(explanations) != 0 || failures != len(findings) {
 		t.Fatalf("got explanations %v and %d failures", explanations, failures)
 	}
+	if !errors.Is(firstFailure, context.Canceled) {
+		t.Fatalf("first failure = %v, want %v", firstFailure, context.Canceled)
+	}
 }
 
 func TestExplainFindingsBoundsConcurrency(t *testing.T) {
@@ -100,11 +105,12 @@ func TestExplainFindingsBoundsConcurrency(t *testing.T) {
 	type result struct {
 		explanations map[string]string
 		failures     int
+		firstFailure error
 	}
 	done := make(chan result, 1)
 	go func() {
-		explanations, failures := explainFindings(ctx, client, findings, checks.Registry(), snapshot.Snapshot{})
-		done <- result{explanations: explanations, failures: failures}
+		explanations, failures, firstFailure := explainFindings(ctx, client, findings, checks.Registry(), snapshot.Snapshot{})
+		done <- result{explanations: explanations, failures: failures, firstFailure: firstFailure}
 	}()
 	for range llmExplanationWorkers {
 		select {
@@ -116,7 +122,7 @@ func TestExplainFindingsBoundsConcurrency(t *testing.T) {
 	close(release)
 	select {
 	case got := <-done:
-		if len(got.explanations) != len(findings) || got.failures != 0 {
+		if len(got.explanations) != len(findings) || got.failures != 0 || got.firstFailure != nil {
 			t.Fatalf("got explanations %v and %d failures", got.explanations, got.failures)
 		}
 	case <-time.After(time.Second):

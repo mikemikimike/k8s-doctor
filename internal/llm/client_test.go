@@ -21,7 +21,7 @@ func TestRedactAndBuildPrompt(t *testing.T) {
 	f := rules.Finding{
 		Severity: rules.SeverityHigh,
 		RuleID:   "example-rule",
-		Message:  "token=abc123 Authorization: Bearer auth-secret postgres://dbuser:dbpass@db.example/app redis://session-token@cache.example/0",
+		Message:  "token=abc123 Authorization: Bearer auth-secret postgres://dbuser:dbpass@db.example/app redis://session-token@cache.example/0 ghp_abcdefghijklmnopqrstuvwxyz1234567890 AKIA1234567890ABCDEF eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature",
 		Evidence: map[string]string{"api_key": "secret-value", "safe": "ok", "connection": "postgres://user:url-secret@db.example/app"},
 	}
 	p := BuildPrompt(f, "Use password: hunter2", snapshot.Snapshot{
@@ -34,13 +34,126 @@ func TestRedactAndBuildPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := string(b)
-	for _, leaked := range []string{"abc123", "secret-value", "hunter2", "bearer-secret", "auth-secret", "dbuser", "dbpass", "url-secret", "session-token", "user:"} {
+	for _, leaked := range []string{"abc123", "secret-value", "hunter2", "bearer-secret", "auth-secret", "dbuser", "dbpass", "url-secret", "session-token", "user:", "ghp_abcdefghijklmnopqrstuvwxyz1234567890", "AKIA1234567890ABCDEF", "eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"} {
 		if strings.Contains(out, leaked) {
 			t.Fatalf("prompt leaked %q: %s", leaked, out)
 		}
 	}
 	if !strings.Contains(out, "[REDACTED]") {
 		t.Fatalf("prompt was not redacted: %s", out)
+	}
+}
+
+func TestBuildPromptKeepsDeploymentContextAndPodEventsWhenTrimmingLabels(t *testing.T) {
+	deployment := snapshot.ResourceRef{Kind: "Deployment", Namespace: "apps", Name: "web"}
+	podRef := snapshot.ResourceRef{Kind: "Pod", Namespace: "apps", Name: "web-7d9f-x2k9p"}
+	replicaSetRef := snapshot.ResourceRef{Kind: "ReplicaSet", Namespace: "apps", Name: "web-7d9f"}
+	replicas := int32(3)
+	workload := snapshot.Workload{
+		Kind:       deployment.Kind,
+		APIVersion: "apps/v1",
+		ObjectMeta: snapshot.ObjectMeta{
+			Name:      deployment.Name,
+			Namespace: deployment.Namespace,
+			Labels:    map[string]string{"large": strings.Repeat("label", 8*1024)},
+		},
+		Replicas: &replicas,
+		Selector: map[string]string{"large": strings.Repeat("selector", 4*1024)},
+		Template: snapshot.PodTemplate{
+			Labels: map[string]string{"large": strings.Repeat("template-label", 2*1024)},
+			Spec: snapshot.PodSpec{
+				Volumes: []snapshot.Volume{{Name: "large", Type: "hostPath", HostPath: strings.Repeat("/volume", 8*1024)}},
+				Containers: []snapshot.Container{{
+					Name:  "web",
+					Image: "example/web:v1",
+					Resources: snapshot.Resources{
+						Requests: map[string]string{"cpu": "100m"},
+						Limits:   map[string]string{"memory": "256Mi"},
+					},
+					ReadinessProbe: &snapshot.Probe{Handler: "httpGet", Path: "/readyz", Port: "http"},
+				}},
+			},
+		},
+	}
+	pod := snapshot.Pod{ObjectMeta: snapshot.ObjectMeta{Name: podRef.Name, Namespace: podRef.Namespace}, Owner: &deployment, Phase: "Running"}
+	prompt := BuildPrompt(rules.Finding{Resource: deployment}, "description", snapshot.Snapshot{
+		Mode: snapshot.ModeCluster,
+		Spec: snapshot.Spec{Workloads: []snapshot.Workload{workload}},
+		Runtime: &snapshot.Runtime{
+			Pods: []snapshot.Pod{pod},
+			Events: []snapshot.Event{
+				{InvolvedObject: deployment, Reason: "Scaling", Message: "deployment event"},
+				{InvolvedObject: replicaSetRef, Owner: &deployment, Reason: "FailedCreate", Message: "replicaset event"},
+				{InvolvedObject: podRef, Reason: "BackOff", Message: "pod restart event"},
+				{InvolvedObject: snapshot.ResourceRef{Kind: "Pod", Namespace: "apps", Name: "unrelated"}, Reason: "Unrelated"},
+			},
+		},
+	})
+
+	data, err := json.Marshal(prompt.Context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > maxContextBytes {
+		t.Fatalf("context is %d bytes, limit is %d", len(data), maxContextBytes)
+	}
+	if truncated, ok := prompt.Context["truncated"].(bool); !ok || !truncated {
+		t.Fatalf("context truncation marker = %#v, want true", prompt.Context["truncated"])
+	}
+
+	gotWorkload, ok := prompt.Context["workload"].(map[string]any)
+	if !ok {
+		t.Fatalf("deployment workload was dropped: %#v", prompt.Context["workload"])
+	}
+	if _, ok := gotWorkload["labels"]; ok {
+		t.Fatal("oversized workload labels were not trimmed")
+	}
+	if _, ok := gotWorkload["selector"]; ok {
+		t.Fatal("oversized workload selector was not trimmed")
+	}
+	template, ok := gotWorkload["template"].(map[string]any)
+	if !ok {
+		t.Fatalf("workload template missing: %#v", gotWorkload["template"])
+	}
+	if _, ok := template["labels"]; ok {
+		t.Fatal("oversized pod template labels were not trimmed")
+	}
+	spec, ok := template["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("pod spec missing: %#v", template["spec"])
+	}
+	if _, ok := spec["volumes"]; ok {
+		t.Fatal("oversized volumes were not trimmed")
+	}
+	containers, ok := spec["containers"].([]any)
+	if !ok || len(containers) != 1 {
+		t.Fatalf("workload containers = %#v, want the primary container", spec["containers"])
+	}
+	container, ok := containers[0].(map[string]any)
+	if !ok || container["name"] != "web" {
+		t.Fatalf("primary container = %#v", containers[0])
+	}
+	if _, ok := container["readinessProbe"]; !ok {
+		t.Fatal("readiness probe was dropped")
+	}
+	resources, ok := container["resources"].(map[string]any)
+	if !ok || resources["requests"] == nil || resources["limits"] == nil {
+		t.Fatalf("container resources were dropped: %#v", container["resources"])
+	}
+
+	pods, ok := prompt.Context["pods"].([]any)
+	if !ok || len(pods) != 1 {
+		t.Fatalf("deployment pods = %#v, want the pod resolved through its ReplicaSet owner", prompt.Context["pods"])
+	}
+	events, ok := prompt.Context["events"].([]any)
+	if !ok || len(events) != 3 {
+		t.Fatalf("deployment events = %#v, want deployment, owned ReplicaSet, and owned-pod events", prompt.Context["events"])
+	}
+	encodedEvents := string(data)
+	for _, want := range []string{"deployment event", "replicaset event", "pod restart event"} {
+		if !strings.Contains(encodedEvents, want) {
+			t.Errorf("deployment context is missing %q", want)
+		}
 	}
 }
 
@@ -114,6 +227,38 @@ func TestHTTPClientRetriesAndRedactsResponse(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("server calls %d, want 2 (one retry)", calls)
+	}
+}
+
+func TestHTTPClientDoesNotFollowRedirects(t *testing.T) {
+	targetRequests := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/target" {
+			targetRequests <- struct{}{}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.URL.Path != "/redirect" {
+			t.Errorf("unexpected request path %q", r.URL.Path)
+		}
+		http.Redirect(w, r, "/target", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	client := &HTTPClient{
+		Endpoint: srv.URL + "/redirect",
+		Model:    "test",
+		Retries:  0,
+		HTTP:     &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return nil }},
+	}
+	_, err := client.Explain(context.Background(), Prompt{Description: "desc"})
+	if err == nil || !strings.Contains(err.Error(), "307 Temporary Redirect") {
+		t.Fatalf("Explain error = %v, want the original redirect response", err)
+	}
+	select {
+	case <-targetRequests:
+		t.Fatal("client followed a redirect")
+	default:
 	}
 }
 
