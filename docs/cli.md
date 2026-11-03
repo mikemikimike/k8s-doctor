@@ -61,8 +61,11 @@ Provider calls are disabled unless `--llm` is passed, and `--no-llm` always
 disables them. The default request timeout is 30 seconds, with three retries
 using exponential backoff; 429 responses honor `Retry-After` values up to two
 minutes and skip retrying when the requested delay is longer. The explanation
-phase has a two-minute overall deadline. Prompts are redacted, include explicit
-instructions to treat cluster data as untrusted, and cap context at 32 KiB.
+phase has a two-minute overall deadline. Prompts use best-effort, pattern-based
+credential redaction, include explicit instructions to treat cluster data as
+untrusted, and cap context at 32 KiB. When a workload exceeds the context
+budget, labels and selectors are trimmed first to preserve container, probe
+and resource context where possible.
 Provider errors fall back to the rule description and produce a warning on
 stderr. `input.llm` is true only when at least one generated explanation is
 included in the report. The default configuration is offline.

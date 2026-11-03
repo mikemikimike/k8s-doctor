@@ -50,9 +50,12 @@ type Termination struct {
 // they explain failures, but they pass through redaction before any LLM call.
 type Event struct {
 	InvolvedObject ResourceRef `json:"involvedObject"`
-	Type           string      `json:"type"`
-	Reason         string      `json:"reason"`
-	Message        string      `json:"message,omitempty"`
-	Count          int32       `json:"count,omitempty"`
-	LastSeen       time.Time   `json:"lastSeen,omitzero"`
+	// Owner is the top-level workload when the involved object is an
+	// intermediate controller such as a ReplicaSet or Job.
+	Owner    *ResourceRef `json:"owner,omitempty"`
+	Type     string       `json:"type"`
+	Reason   string       `json:"reason"`
+	Message  string       `json:"message,omitempty"`
+	Count    int32        `json:"count,omitempty"`
+	LastSeen time.Time    `json:"lastSeen,omitzero"`
 }

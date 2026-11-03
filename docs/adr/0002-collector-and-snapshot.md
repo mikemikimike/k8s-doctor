@@ -33,7 +33,8 @@ Snapshot
 └── runtime         observed state, CLUSTER mode only (absent in manifest mode)
     ├── pods                phase, node, owner workload, per-container ready /
     │                       restartCount / state / reason / lastTermination (e.g. OOMKilled)
-    └── events              involved object, type, reason, message, count
+    └── events              involved object, owner workload when applicable,
+                            type, reason, message, count
 ```
 
 Invariants checked on every load:

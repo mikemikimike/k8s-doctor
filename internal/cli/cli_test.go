@@ -200,6 +200,7 @@ func TestSnapshotCommand(t *testing.T) {
 		t.Errorf("--snapshot should not be a snapshot flag, code %d", code)
 	}
 }
+
 func TestLLMFailureWarnsAndFallsBackToRuleExplanation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
@@ -223,7 +224,7 @@ func TestLLMFailureWarnsAndFallsBackToRuleExplanation(t *testing.T) {
 	if len(got.Findings) == 0 || got.Findings[0].Explanation.Source != report.SourceRule {
 		t.Fatalf("explanation did not fall back to rule text: %+v", got.Findings)
 	}
-	if !strings.Contains(errOut.String(), "warning: LLM explanations failed for ") || !strings.Contains(errOut.String(), "using rule descriptions") {
+	if !strings.Contains(errOut.String(), "warning: LLM explanations failed for ") || !strings.Contains(errOut.String(), "first failure: llm provider returned 503 Service Unavailable") || !strings.Contains(errOut.String(), "using rule descriptions") {
 		t.Fatalf("missing fallback warning: %q", errOut.String())
 	}
 	if strings.Contains(errOut.String(), "unavailable") {

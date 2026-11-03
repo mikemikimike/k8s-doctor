@@ -25,6 +25,7 @@ var (
 	sensitive           = regexp.MustCompile(`(?i)(api[_-]?key|token|password|secret|authorization|bearer)\s*[:=]\s*[^\s,;]+`)
 	authorizationBearer = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*)bearer\s+[^\s,;]+`)
 	bearerCredential    = regexp.MustCompile(`(?i)\bbearer\s+[^\s,;]+`)
+	knownCredential     = regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b`)
 	urlCredential       = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@`)
 )
 
@@ -48,10 +49,11 @@ func RedactText(text string) string {
 	text = urlCredential.ReplaceAllString(text, `${1}[REDACTED]@`)
 	text = authorizationBearer.ReplaceAllString(text, `${1}Bearer [REDACTED]`)
 	text = bearerCredential.ReplaceAllString(text, "Bearer [REDACTED]")
-	return sensitive.ReplaceAllStringFunc(text, func(match string) string {
+	text = sensitive.ReplaceAllStringFunc(text, func(match string) string {
 		key := match[:strings.IndexAny(match, ":=")]
 		return key + "=[REDACTED]"
 	})
+	return knownCredential.ReplaceAllString(text, "[REDACTED]")
 }
 
 func sensitiveKey(key string) bool {
@@ -102,10 +104,12 @@ func redactContext(f rules.Finding, snap snapshot.Snapshot) map[string]any {
 	}
 	if snap.Runtime != nil {
 		pods := make([]snapshot.Pod, 0)
+		podRefs := make(map[snapshot.ResourceRef]struct{})
 		for i := range snap.Runtime.Pods {
 			pod := &snap.Runtime.Pods[i]
 			if pod.Ref() == f.Resource || (pod.Owner != nil && *pod.Owner == f.Resource) {
 				pods = append(pods, *pod)
+				podRefs[pod.Ref()] = struct{}{}
 			}
 		}
 		if len(pods) > 0 {
@@ -114,7 +118,9 @@ func redactContext(f rules.Finding, snap snapshot.Snapshot) map[string]any {
 		events := make([]snapshot.Event, 0)
 		for i := range snap.Runtime.Events {
 			event := &snap.Runtime.Events[i]
-			if event.InvolvedObject == f.Resource {
+			_, belongsToPod := podRefs[event.InvolvedObject]
+			belongsToWorkload := event.Owner != nil && *event.Owner == f.Resource
+			if event.InvolvedObject == f.Resource || belongsToPod || belongsToWorkload {
 				events = append(events, *event)
 			}
 		}
@@ -159,9 +165,20 @@ func boundContext(context map[string]any) map[string]any {
 		if !isList {
 			candidate := copyContext(bounded)
 			candidate[key] = value
-			if contextSize(candidate) <= limit {
+			switch {
+			case contextSize(candidate) <= limit:
 				bounded[key] = value
-			} else {
+			case key == "workload":
+				trimmed := trimWorkload(value, func(value any) bool {
+					candidate[key] = value
+					return contextSize(candidate) <= limit
+				})
+				candidate[key] = trimmed
+				if contextSize(candidate) <= limit {
+					bounded[key] = trimmed
+				}
+				truncated = true
+			default:
 				truncated = true
 			}
 			continue
@@ -192,6 +209,74 @@ func boundContext(context map[string]any) map[string]any {
 		bounded["truncated"] = true
 	}
 	return bounded
+}
+
+func trimWorkload(value any, fits func(any) bool) any {
+	workload, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	delete(workload, "labels")
+	delete(workload, "selector")
+	template, ok := workload["template"].(map[string]any)
+	if !ok {
+		return workload
+	}
+	delete(template, "labels")
+	spec, ok := template["spec"].(map[string]any)
+	if !ok || fits(workload) {
+		return workload
+	}
+
+	for _, key := range []string{
+		"volumes",
+		"topologySpreadConstraints",
+		"affinity",
+		"securityContext",
+		"serviceAccountName",
+		"hostNetwork",
+		"hostPID",
+		"hostIPC",
+	} {
+		delete(spec, key)
+		if fits(workload) {
+			return workload
+		}
+	}
+
+	for _, key := range []string{"initContainers", "containers"} {
+		containers, ok := spec[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range containers {
+			container, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, field := range []string{"env", "ports", "securityContext", "imagePullPolicy"} {
+				delete(container, field)
+				if fits(workload) {
+					return workload
+				}
+			}
+		}
+	}
+	if fits(workload) {
+		return workload
+	}
+	delete(spec, "initContainers")
+	if fits(workload) {
+		return workload
+	}
+	containers, ok := spec["containers"].([]any)
+	for count := min(len(containers)-1, maxContextItems); ok && count > 0; count-- {
+		spec["containers"] = containers[:count]
+		if fits(workload) {
+			return workload
+		}
+	}
+	return workload
 }
 
 func copyContext(context map[string]any) map[string]any {
@@ -298,6 +383,12 @@ func (c *HTTPClient) Explain(ctx context.Context, p Prompt) (string, error) {
 		client := c.HTTP
 		if client == nil {
 			client = &http.Client{Timeout: timeout}
+		} else {
+			clientCopy := *client
+			client = &clientCopy
+		}
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
 		}
 		resp, doErr := client.Do(req)
 		if doErr != nil {

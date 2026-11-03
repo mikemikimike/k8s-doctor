@@ -311,7 +311,11 @@ func collectRuntime(ctx context.Context, c *Clients, ns string, jobs []batchv1.J
 		return fmt.Errorf("list events in %s: %w", ns, err)
 	}
 	for i := range events.Items {
-		rt.Events = append(rt.Events, Event(&events.Items[i]))
+		event := Event(&events.Items[i])
+		if owner, ok := owners[event.InvolvedObject.Kind+"/"+event.InvolvedObject.Name]; ok {
+			event.Owner = &owner
+		}
+		rt.Events = append(rt.Events, event)
 	}
 	return nil
 }

@@ -155,12 +155,17 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 			return 0, err
 		}
 		var failed int
+		var firstFailure error
 		ctx, cancel := context.WithTimeout(context.Background(), llmExplanationDeadline)
-		explanations, failed = explainFindings(ctx, provider, res.Findings, reg, *snap)
+		explanations, failed, firstFailure = explainFindings(ctx, provider, res.Findings, reg, *snap)
 		cancel()
 		llmUsed = len(explanations) > 0
 		if failed > 0 {
-			fmt.Fprintf(env.Stderr, "warning: LLM explanations failed for %d of %d findings; using rule descriptions\n", failed, len(res.Findings))
+			reason := "unknown LLM error"
+			if firstFailure != nil {
+				reason = strings.TrimSpace(llm.RedactText(firstFailure.Error()))
+			}
+			fmt.Fprintf(env.Stderr, "warning: LLM explanations failed for %d of %d findings (first failure: %s); using rule descriptions\n", failed, len(res.Findings), reason)
 		}
 	}
 	rep := report.Build(snap, reg, engine, res, report.Options{
@@ -197,10 +202,10 @@ type explanationResult struct {
 	err  error
 }
 
-func explainFindings(ctx context.Context, provider llm.Client, findings []rules.Finding, reg *rules.Registry, snap snapshot.Snapshot) (map[string]string, int) {
+func explainFindings(ctx context.Context, provider llm.Client, findings []rules.Finding, reg *rules.Registry, snap snapshot.Snapshot) (map[string]string, int, error) {
 	explanations := make(map[string]string, len(findings))
 	if len(findings) == 0 {
-		return explanations, 0
+		return explanations, 0, nil
 	}
 
 	jobs := make(chan rules.Finding, len(findings))
@@ -231,15 +236,22 @@ func explainFindings(ctx context.Context, provider llm.Client, findings []rules.
 	}
 
 	failed := 0
+	var firstFailure error
 	for range findings {
 		result := <-results
 		if result.err != nil || result.text == "" {
 			failed++
+			if firstFailure == nil {
+				firstFailure = result.err
+				if firstFailure == nil {
+					firstFailure = errors.New("provider returned an empty explanation")
+				}
+			}
 			continue
 		}
 		explanations[result.id] = result.text
 	}
-	return explanations, failed
+	return explanations, failed, firstFailure
 }
 
 // parseFailOn returns the threshold severity, or 0 for "none".
