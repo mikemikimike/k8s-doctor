@@ -25,7 +25,8 @@ var (
 	sensitive           = regexp.MustCompile(`(?i)(api[_-]?key|token|password|secret|authorization|bearer)\s*[:=]\s*[^\s,;]+`)
 	authorizationBearer = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*)bearer\s+[^\s,;]+`)
 	bearerCredential    = regexp.MustCompile(`(?i)\bbearer\s+[^\s,;]+`)
-	knownCredential     = regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b`)
+	knownCredential     = regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})\b`)
+	jwtCredential       = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
 	urlCredential       = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@`)
 )
 
@@ -53,7 +54,8 @@ func RedactText(text string) string {
 		key := match[:strings.IndexAny(match, ":=")]
 		return key + "=[REDACTED]"
 	})
-	return knownCredential.ReplaceAllString(text, "[REDACTED]")
+	text = knownCredential.ReplaceAllString(text, "[REDACTED]")
+	return jwtCredential.ReplaceAllString(text, "[REDACTED]")
 }
 
 func sensitiveKey(key string) bool {
@@ -154,7 +156,8 @@ func redactContext(f rules.Finding, snap snapshot.Snapshot) map[string]any {
 func boundContext(context map[string]any) map[string]any {
 	bounded := map[string]any{"mode": context["mode"], "resource": context["resource"]}
 	truncated := false
-	limit := maxContextBytes - 32 // Leave room for the truncation marker.
+	omittedWorkloadContainers := 0
+	limit := maxContextBytes - 128 // Leave room for truncation details.
 
 	for _, key := range []string{"workload", "pods", "events"} {
 		value, ok := context[key]
@@ -169,13 +172,14 @@ func boundContext(context map[string]any) map[string]any {
 			case contextSize(candidate) <= limit:
 				bounded[key] = value
 			case key == "workload":
-				trimmed := trimWorkload(value, func(value any) bool {
+				trimmed, omitted := trimWorkload(value, func(value any) bool {
 					candidate[key] = value
 					return contextSize(candidate) <= limit
 				})
 				candidate[key] = trimmed
 				if contextSize(candidate) <= limit {
 					bounded[key] = trimmed
+					omittedWorkloadContainers = omitted
 				}
 				truncated = true
 			default:
@@ -207,25 +211,28 @@ func boundContext(context map[string]any) map[string]any {
 	}
 	if truncated {
 		bounded["truncated"] = true
+		if omittedWorkloadContainers > 0 {
+			bounded["omittedWorkloadContainers"] = omittedWorkloadContainers
+		}
 	}
 	return bounded
 }
 
-func trimWorkload(value any, fits func(any) bool) any {
+func trimWorkload(value any, fits func(any) bool) (any, int) {
 	workload, ok := value.(map[string]any)
 	if !ok {
-		return value
+		return value, 0
 	}
 	delete(workload, "labels")
 	delete(workload, "selector")
 	template, ok := workload["template"].(map[string]any)
 	if !ok {
-		return workload
+		return workload, 0
 	}
 	delete(template, "labels")
 	spec, ok := template["spec"].(map[string]any)
 	if !ok || fits(workload) {
-		return workload
+		return workload, 0
 	}
 
 	for _, key := range []string{
@@ -240,7 +247,7 @@ func trimWorkload(value any, fits func(any) bool) any {
 	} {
 		delete(spec, key)
 		if fits(workload) {
-			return workload
+			return workload, 0
 		}
 	}
 
@@ -254,29 +261,43 @@ func trimWorkload(value any, fits func(any) bool) any {
 			if !ok {
 				continue
 			}
-			for _, field := range []string{"env", "ports", "securityContext", "imagePullPolicy"} {
+			for _, field := range []string{"ports", "securityContext", "imagePullPolicy"} {
 				delete(container, field)
 				if fits(workload) {
-					return workload
+					return workload, 0
 				}
 			}
 		}
 	}
-	if fits(workload) {
-		return workload
-	}
+
+	omittedContainers := 0
+	initContainers, _ := spec["initContainers"].([]any)
 	delete(spec, "initContainers")
+	omittedContainers += len(initContainers)
 	if fits(workload) {
-		return workload
+		return workload, omittedContainers
 	}
 	containers, ok := spec["containers"].([]any)
+	omittedRegularContainers := 0
 	for count := min(len(containers)-1, maxContextItems); ok && count > 0; count-- {
 		spec["containers"] = containers[:count]
+		omittedRegularContainers = len(containers) - count
 		if fits(workload) {
-			return workload
+			return workload, omittedContainers + omittedRegularContainers
 		}
 	}
-	return workload
+	retainedContainers, _ := spec["containers"].([]any)
+	for _, item := range retainedContainers {
+		container, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(container, "env")
+		if fits(workload) {
+			return workload, omittedContainers + omittedRegularContainers
+		}
+	}
+	return workload, omittedContainers + omittedRegularContainers
 }
 
 func copyContext(context map[string]any) map[string]any {

@@ -41,6 +41,17 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestDecodeClusterEventWithoutOwner(t *testing.T) {
+	data := `{"schemaVersion":"v1alpha1","mode":"cluster","spec":{},"runtime":{"events":[{"involvedObject":{"kind":"ReplicaSet","namespace":"shop","name":"api-7d9f"},"type":"Warning","reason":"FailedCreate"}]}}`
+	decoded, err := snapshot.Decode(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("decode legacy event without owner: %v", err)
+	}
+	if got := decoded.Runtime.Events[0].Owner; got != nil {
+		t.Fatalf("legacy event owner = %+v, want nil", got)
+	}
+}
+
 func TestResourceRefRoundTrip(t *testing.T) {
 	for _, s := range []string{"Deployment/shop/api", "Namespace/shop"} {
 		ref, err := snapshot.ParseResourceRef(s)

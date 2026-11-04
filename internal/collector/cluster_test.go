@@ -2,6 +2,7 @@ package collector_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"slices"
 	"strings"
@@ -142,6 +143,22 @@ func TestCluster(t *testing.T) {
 		}
 		if s.Runtime.Events[0].Count != 12 || s.Runtime.Events[0].LastSeen.IsZero() {
 			t.Errorf("Pod event = %+v", s.Runtime.Events[0])
+		}
+	}
+	jsonSnapshot, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := snapshot.Decode(strings.NewReader(string(jsonSnapshot)))
+	if err != nil {
+		t.Fatalf("decode collected snapshot: %v", err)
+	}
+	if decoded.SchemaVersion != snapshot.SchemaVersion {
+		t.Fatalf("schema version = %q, want %q", decoded.SchemaVersion, snapshot.SchemaVersion)
+	}
+	for _, event := range decoded.Runtime.Events {
+		if event.InvolvedObject.Kind == "ReplicaSet" && (event.Owner == nil || event.Owner.String() != "Deployment/shop/api") {
+			t.Fatalf("serialized ReplicaSet event owner = %+v", event.Owner)
 		}
 	}
 

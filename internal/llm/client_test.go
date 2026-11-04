@@ -21,7 +21,7 @@ func TestRedactAndBuildPrompt(t *testing.T) {
 	f := rules.Finding{
 		Severity: rules.SeverityHigh,
 		RuleID:   "example-rule",
-		Message:  "token=abc123 Authorization: Bearer auth-secret postgres://dbuser:dbpass@db.example/app redis://session-token@cache.example/0 ghp_abcdefghijklmnopqrstuvwxyz1234567890 AKIA1234567890ABCDEF eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature",
+		Message:  "token=abc123 Authorization: Bearer auth-secret postgres://dbuser:dbpass@db.example/app redis://session-token@cache.example/0 ghp_abcdefghijklmnopqrstuvwxyz1234567890 AKIA1234567890ABCDEF eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature eyJheader.payload.signature-",
 		Evidence: map[string]string{"api_key": "secret-value", "safe": "ok", "connection": "postgres://user:url-secret@db.example/app"},
 	}
 	p := BuildPrompt(f, "Use password: hunter2", snapshot.Snapshot{
@@ -34,7 +34,7 @@ func TestRedactAndBuildPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := string(b)
-	for _, leaked := range []string{"abc123", "secret-value", "hunter2", "bearer-secret", "auth-secret", "dbuser", "dbpass", "url-secret", "session-token", "user:", "ghp_abcdefghijklmnopqrstuvwxyz1234567890", "AKIA1234567890ABCDEF", "eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"} {
+	for _, leaked := range []string{"abc123", "secret-value", "hunter2", "bearer-secret", "auth-secret", "dbuser", "dbpass", "url-secret", "session-token", "user:", "ghp_abcdefghijklmnopqrstuvwxyz1234567890", "AKIA1234567890ABCDEF", "eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature", "eyJheader.payload.signature-"} {
 		if strings.Contains(out, leaked) {
 			t.Fatalf("prompt leaked %q: %s", leaked, out)
 		}
@@ -76,7 +76,7 @@ func TestBuildPromptKeepsDeploymentContextAndPodEventsWhenTrimmingLabels(t *test
 		},
 	}
 	pod := snapshot.Pod{ObjectMeta: snapshot.ObjectMeta{Name: podRef.Name, Namespace: podRef.Namespace}, Owner: &deployment, Phase: "Running"}
-	prompt := BuildPrompt(rules.Finding{Resource: deployment}, "description", snapshot.Snapshot{
+	inputSnapshot := snapshot.Snapshot{
 		Mode: snapshot.ModeCluster,
 		Spec: snapshot.Spec{Workloads: []snapshot.Workload{workload}},
 		Runtime: &snapshot.Runtime{
@@ -88,7 +88,19 @@ func TestBuildPromptKeepsDeploymentContextAndPodEventsWhenTrimmingLabels(t *test
 				{InvolvedObject: snapshot.ResourceRef{Kind: "Pod", Namespace: "apps", Name: "unrelated"}, Reason: "Unrelated"},
 			},
 		},
-	})
+	}
+	snapshotBefore, err := json.Marshal(inputSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := BuildPrompt(rules.Finding{Resource: deployment}, "description", inputSnapshot)
+	snapshotAfter, err := json.Marshal(inputSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshotBefore) != string(snapshotAfter) {
+		t.Fatal("building a bounded prompt mutated the input snapshot")
+	}
 
 	data, err := json.Marshal(prompt.Context)
 	if err != nil {
@@ -154,6 +166,59 @@ func TestBuildPromptKeepsDeploymentContextAndPodEventsWhenTrimmingLabels(t *test
 		if !strings.Contains(encodedEvents, want) {
 			t.Errorf("deployment context is missing %q", want)
 		}
+	}
+}
+
+func TestBoundContextPreservesEnvAndReportsOmittedWorkloadContainers(t *testing.T) {
+	args := make([]any, 160)
+	for i := range args {
+		args[i] = strings.Repeat("x", 20)
+	}
+	containers := make([]any, 12)
+	for i := range containers {
+		containers[i] = map[string]any{
+			"name":  "container-" + strconv.Itoa(i),
+			"image": "example/app:v1",
+			"env": []any{map[string]any{
+				"name":      "DATABASE_URL",
+				"valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "database", "key": "url"}},
+			}},
+			"args": args,
+		}
+	}
+	workload := map[string]any{"template": map[string]any{"spec": map[string]any{"containers": containers}}}
+	bounded := boundContext(map[string]any{
+		"mode":     "cluster",
+		"resource": map[string]any{"kind": "Deployment", "namespace": "apps", "name": "api"},
+		"workload": workload,
+	})
+
+	kept, ok := bounded["workload"].(map[string]any)
+	if !ok {
+		t.Fatalf("workload was dropped: %#v", bounded)
+	}
+	template := kept["template"].(map[string]any)
+	spec := template["spec"].(map[string]any)
+	retained, ok := spec["containers"].([]any)
+	if !ok || len(retained) == len(containers) || len(retained) == 0 {
+		t.Fatalf("retained %d containers, want a non-empty trimmed list", len(retained))
+	}
+	for _, item := range retained {
+		container := item.(map[string]any)
+		if _, ok := container["env"]; !ok {
+			t.Fatalf("environment references were removed before oversized containers: %#v", container)
+		}
+	}
+	wantOmitted := len(containers) - len(retained)
+	if got := bounded["omittedWorkloadContainers"]; got != wantOmitted {
+		t.Fatalf("omitted workload containers = %#v, want %d", got, wantOmitted)
+	}
+	data, err := json.Marshal(bounded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > maxContextBytes {
+		t.Fatalf("bounded context is %d bytes, limit is %d", len(data), maxContextBytes)
 	}
 }
 
@@ -231,33 +296,41 @@ func TestHTTPClientRetriesAndRedactsResponse(t *testing.T) {
 }
 
 func TestHTTPClientDoesNotFollowRedirects(t *testing.T) {
-	targetRequests := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/target" {
-			targetRequests <- struct{}{}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.URL.Path != "/redirect" {
-			t.Errorf("unexpected request path %q", r.URL.Path)
-		}
-		http.Redirect(w, r, "/target", http.StatusTemporaryRedirect)
+	targetAuthorization := make(chan string, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetAuthorization <- r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer srv.Close()
+	defer target.Close()
+	sourceAuthorization := make(chan string, 1)
+	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceAuthorization <- r.Header.Get("Authorization")
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
 
 	client := &HTTPClient{
-		Endpoint: srv.URL + "/redirect",
+		Endpoint: source.URL + "/redirect",
 		Model:    "test",
+		APIKey:   "provider-secret",
 		Retries:  0,
-		HTTP:     &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return nil }},
+		HTTP:     source.Client(),
 	}
 	_, err := client.Explain(context.Background(), Prompt{Description: "desc"})
 	if err == nil || !strings.Contains(err.Error(), "307 Temporary Redirect") {
 		t.Fatalf("Explain error = %v, want the original redirect response", err)
 	}
 	select {
-	case <-targetRequests:
-		t.Fatal("client followed a redirect")
+	case got := <-sourceAuthorization:
+		if got != "Bearer provider-secret" {
+			t.Fatalf("source Authorization = %q, want provider key", got)
+		}
+	default:
+		t.Fatal("source did not receive the provider request")
+	}
+	select {
+	case got := <-targetAuthorization:
+		t.Fatalf("HTTP redirect target received Authorization %q", got)
 	default:
 	}
 }

@@ -20,7 +20,7 @@ Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doc
 - Read-only: the collector only issues `get` and `list` requests. [`deploy/rbac/readonly-clusterrole.yaml`](../deploy/rbac/readonly-clusterrole.yaml) is the minimal ClusterRole, plus a ServiceAccount and binding to run it under.
 - Every namespace is read except `kube-system`, `kube-public`, `kube-node-lease` and `local-path-storage`. Name namespaces with `--namespace` to narrow it, or to include a system namespace explicitly.
 - Secrets and ConfigMaps are listed through the metadata API, so their values are never sent to k8s-doctor. In cluster mode the snapshot records their names only, not their key names.
-- Pods, container statuses and Events go into `runtime`. Each Pod is attributed to its top-level workload (ReplicaSet to Deployment, Job to CronJob). Jobs created by a CronJob are folded into the CronJob rather than listed as workloads.
+- Pods, container statuses and Events go into `runtime`. Each Pod is attributed to its top-level workload (ReplicaSet to Deployment, Job to CronJob). Events retain their involved object and include an optional top-level owner when it is a ReplicaSet or Job. Jobs created by a CronJob are folded into the CronJob rather than listed as workloads.
 
 ### Manifests mode
 
