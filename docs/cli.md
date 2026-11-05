@@ -49,7 +49,7 @@ Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doc
 | `--fail-on` | `high` | Lowest severity that makes the exit code non-zero: `critical`, `high`, `medium`, `low` or `none`. |
 | `--color` | `auto` | `auto` (only on a terminal, and never when `NO_COLOR` is set), `always` or `never`. |
 | `--explain` | off | Print each finding's explanation under it in text output. |
-| `--llm` | off | Send redacted finding context to the configured LLM provider. Requires an `llm.provider` in the config; otherwise the command exits with a usage error. |
+| `--llm` | off | Send finding context with best-effort, pattern-based redaction to the configured LLM provider. Requires an `llm.provider` in the config; otherwise the command exits with a usage error. |
 | `--no-llm` | off | Never call an LLM; explanations use deterministic rule descriptions and the report's `input.llm` is `false`. |
 
 When `.k8s-doctor.yaml` contains an `llm` block, the `openai-compatible`

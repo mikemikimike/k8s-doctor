@@ -172,6 +172,17 @@ func boundContext(context map[string]any) map[string]any {
 			case contextSize(candidate) <= limit:
 				bounded[key] = value
 			case key == "workload":
+				containerCount := 0
+				if workload, ok := value.(map[string]any); ok {
+					if template, ok := workload["template"].(map[string]any); ok {
+						if spec, ok := template["spec"].(map[string]any); ok {
+							for _, name := range []string{"initContainers", "containers"} {
+								containers, _ := spec[name].([]any)
+								containerCount += len(containers)
+							}
+						}
+					}
+				}
 				trimmed, omitted := trimWorkload(value, func(value any) bool {
 					candidate[key] = value
 					return contextSize(candidate) <= limit
@@ -180,6 +191,8 @@ func boundContext(context map[string]any) map[string]any {
 				if contextSize(candidate) <= limit {
 					bounded[key] = trimmed
 					omittedWorkloadContainers = omitted
+				} else {
+					omittedWorkloadContainers = containerCount
 				}
 				truncated = true
 			default:
