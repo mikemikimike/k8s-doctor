@@ -44,6 +44,14 @@ func TestRedactAndBuildPrompt(t *testing.T) {
 	}
 }
 
+func TestRedactJWTTrailingCharacters(t *testing.T) {
+	for _, token := range []string{"eyJheader.payload.signature-", "eyJheader.payload.signature_"} {
+		if got := RedactText("before " + token + " after"); got != "before [REDACTED] after" {
+			t.Errorf("RedactText(%q) = %q", token, got)
+		}
+	}
+}
+
 func TestBuildPromptKeepsDeploymentContextAndPodEventsWhenTrimmingLabels(t *testing.T) {
 	deployment := snapshot.ResourceRef{Kind: "Deployment", Namespace: "apps", Name: "web"}
 	podRef := snapshot.ResourceRef{Kind: "Pod", Namespace: "apps", Name: "web-7d9f-x2k9p"}
@@ -219,6 +227,23 @@ func TestBoundContextPreservesEnvAndReportsOmittedWorkloadContainers(t *testing.
 	}
 	if len(data) > maxContextBytes {
 		t.Fatalf("bounded context is %d bytes, limit is %d", len(data), maxContextBytes)
+	}
+}
+
+func TestBoundContextCountsAllContainersWhenWorkloadDropped(t *testing.T) {
+	workload := map[string]any{
+		"large": strings.Repeat("x", maxContextBytes),
+		"template": map[string]any{"spec": map[string]any{
+			"initContainers": []any{map[string]any{"name": "init"}},
+			"containers":     []any{map[string]any{"name": "one"}, map[string]any{"name": "two"}},
+		}},
+	}
+	bounded := boundContext(map[string]any{"mode": "cluster", "resource": "app", "workload": workload})
+	if _, ok := bounded["workload"]; ok {
+		t.Fatal("oversized workload was retained")
+	}
+	if bounded["truncated"] != true || bounded["omittedWorkloadContainers"] != 3 {
+		t.Fatalf("truncation details = %#v, want three omitted containers", bounded)
 	}
 }
 
