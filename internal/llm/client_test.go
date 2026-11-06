@@ -360,6 +360,46 @@ func TestHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+func TestHTTPClientDoesNotFollowHTTPSRedirects(t *testing.T) {
+	targetAuthorization := make(chan string, 1)
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetAuthorization <- r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+	sourceAuthorization := make(chan string, 1)
+	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceAuthorization <- r.Header.Get("Authorization")
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+
+	client := &HTTPClient{
+		Endpoint: source.URL + "/redirect",
+		Model:    "test",
+		APIKey:   "provider-secret",
+		Retries:  0,
+		HTTP:     source.Client(),
+	}
+	_, err := client.Explain(context.Background(), Prompt{Description: "desc"})
+	if err == nil || !strings.Contains(err.Error(), "307 Temporary Redirect") {
+		t.Fatalf("Explain error = %v, want the original redirect response", err)
+	}
+	select {
+	case got := <-sourceAuthorization:
+		if got != "Bearer provider-secret" {
+			t.Fatalf("source Authorization = %q, want provider key", got)
+		}
+	default:
+		t.Fatal("source did not receive the provider request")
+	}
+	select {
+	case got := <-targetAuthorization:
+		t.Fatalf("HTTPS redirect target received Authorization %q", got)
+	default:
+	}
+}
+
 func TestHTTPClientRetriesRateLimitAndHonorsRetryAfter(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

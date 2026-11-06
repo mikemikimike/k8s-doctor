@@ -192,6 +192,8 @@ func boundContext(context map[string]any) map[string]any {
 					bounded[key] = trimmed
 					omittedWorkloadContainers = omitted
 				} else {
+					// The workload could not fit even after trimming, so all of its
+					// init and regular containers are omitted from the model context.
 					omittedWorkloadContainers = containerCount
 				}
 				truncated = true
