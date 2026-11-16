@@ -1,7 +1,6 @@
 package fixtures_test
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -33,9 +32,6 @@ func TestFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			snap, err := f.Snapshot()
-			if errors.Is(err, fixtures.ErrManifestsUnsupported) {
-				t.Skip(err)
-			}
 			if err != nil {
 				t.Fatal(err)
 			}

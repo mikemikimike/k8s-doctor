@@ -6,7 +6,9 @@ Labeled inputs with known expected findings. They are the ground truth for `make
 
 ```text
 fixtures/
+├── _bases/                       # shared kustomize bases, not fixtures
 ├── clean/<name>/                 # no findings from ANY rule
+├── kustomize/<name>/             # overlays exercising the manifest collector
 └── <rule-id>/
     ├── positive/                 # the rule must fire, exactly as listed
     └── near-miss/                # looks like a problem, isn't: the rule stays quiet
@@ -15,7 +17,7 @@ fixtures/
 Every directory containing an `expected.yaml` is a fixture. Next to it is the input:
 
 - `snapshot.json`: a snapshot in the format from [ADR-0002](../docs/adr/0002-collector-and-snapshot.md). Required for cluster-only rules, which need the `runtime` section.
-- `manifests/`: plain manifests or a kustomize overlay. Supported once the manifest collector lands (#8); until then such fixtures are skipped.
+- `manifests/`: plain manifests or a kustomize overlay, read through the manifest collector exactly as `--manifests` would. Overlays can share bases from `fixtures/_bases/`, which holds no `expected.yaml` and so is not a fixture itself.
 
 ## `expected.yaml`
 

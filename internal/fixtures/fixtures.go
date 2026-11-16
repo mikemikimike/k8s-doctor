@@ -14,6 +14,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/rbalukja15/k8s-doctor/internal/collector"
 	"github.com/rbalukja15/k8s-doctor/internal/rules"
 	"github.com/rbalukja15/k8s-doctor/internal/snapshot"
 )
@@ -31,10 +32,6 @@ const (
 	KindClean    = "clean"
 	KindNearMiss = "near-miss"
 )
-
-// ErrManifestsUnsupported is returned for manifest fixtures until the
-// manifest collector (#8) exists.
-var ErrManifestsUnsupported = errors.New("manifest fixtures need the manifest collector (#8)")
 
 // Expected is the parsed expected.yaml of a fixture.
 type Expected struct {
@@ -162,10 +159,12 @@ func (f *Fixture) InScope(id string) bool {
 	return len(f.Expected.Rules) == 0 || slices.Contains(f.Expected.Rules, id)
 }
 
-// Snapshot loads the fixture's input snapshot.
+// Snapshot loads the fixture's input: manifests/ through the manifest
+// collector when present, otherwise snapshot.json.
 func (f *Fixture) Snapshot() (*snapshot.Snapshot, error) {
-	if _, err := os.Stat(filepath.Join(f.Dir, ManifestsDir)); err == nil {
-		return nil, ErrManifestsUnsupported
+	dir := filepath.Join(f.Dir, ManifestsDir)
+	if _, err := os.Stat(dir); err == nil {
+		return collector.Manifests(dir)
 	}
 	return snapshot.Load(filepath.Join(f.Dir, SnapshotFile))
 }

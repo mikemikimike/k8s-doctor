@@ -134,7 +134,7 @@ func TestInputAndFlagErrors(t *testing.T) {
 		{"no input", []string{"check"}, cli.ExitUsage, "exactly one of"},
 		{"two inputs", []string{"check", "--snapshot", clean, "--cluster"}, cli.ExitUsage, "exactly one of"},
 		{"cluster not built", []string{"check", "--cluster"}, cli.ExitError, "#7"},
-		{"manifests not built", []string{"check", "--manifests", "."}, cli.ExitError, "#8"},
+		{"manifests missing dir", []string{"check", "--manifests", "no-such-dir"}, cli.ExitError, "no-such-dir"},
 		{"missing file", []string{"check", "--snapshot", "nope.json"}, cli.ExitError, "nope.json"},
 		{"bad format", []string{"check", "--snapshot", clean, "--format", "yaml"}, cli.ExitUsage, "--format"},
 		{"bad fail-on", []string{"check", "--snapshot", clean, "--fail-on", "urgent"}, cli.ExitUsage, "--fail-on"},
@@ -164,5 +164,17 @@ func TestNoColorEnv(t *testing.T) {
 	cli.RunEnv([]string{"check", "--snapshot", highFix}, env)
 	if strings.Contains(out.String(), "\033[") {
 		t.Error("NO_COLOR was not honored")
+	}
+}
+
+func TestManifests(t *testing.T) {
+	code, out, errOut := run("check", "--manifests", "../../fixtures/kustomize/prod-overlay/manifests", "--color", "never")
+	if code != cli.ExitFindingHigh {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	for _, want := range []string{"Deployment/shop-prod/prod-checkout", "deployment-single-replica", "manifest mode"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output is missing %q:\n%s", want, out)
+		}
 	}
 }

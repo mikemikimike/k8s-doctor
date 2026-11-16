@@ -1,0 +1,17 @@
+description: "A kustomize overlay that sets replicas to 1 and the image tag to latest on a clean base, with a namePrefix and namespace."
+kind: positive
+rules:
+  - deployment-single-replica
+  - image-tag-mutable
+  - image-pull-policy-stale
+  - resources-requests-missing
+findings:
+  - rule: deployment-single-replica
+    resource: Deployment/shop-prod/prod-checkout
+    field: spec.replicas
+  - rule: image-tag-mutable
+    resource: Deployment/shop-prod/prod-checkout
+    field: spec.template.spec.containers[name=app].image
+  - rule: image-pull-policy-stale
+    resource: Deployment/shop-prod/prod-checkout
+    field: spec.template.spec.containers[name=app].imagePullPolicy

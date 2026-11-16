@@ -1,0 +1,11 @@
+namePrefix: prod-
+nameSuffix: -v2
+namespace: shop-prod
+resources:
+  - ../../base
+patches:
+  - target: {kind: Deployment, name: web}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3

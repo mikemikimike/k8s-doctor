@@ -1,0 +1,3 @@
+# Shared base for kustomize fixtures. Not a fixture itself (no expected.yaml).
+resources:
+  - checkout.yaml

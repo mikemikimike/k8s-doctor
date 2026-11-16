@@ -1,0 +1,3 @@
+description: "Plain manifests (Deployment, Service, PDB, HPA, StatefulSet, CronJob, Secret) that follow every built-in rule."
+kind: clean
+findings: []

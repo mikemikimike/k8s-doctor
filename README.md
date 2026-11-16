@@ -40,11 +40,13 @@ Go, because the libraries this needs are Go libraries that can be called in-proc
 
 ## Usage
 
-Early development: the rule engine, the first rules and the CLI work today on snapshot files. The cluster (#7) and manifest (#8) collectors are next.
+Early development: the rule engine, the first rules and the CLI work today on manifest folders, kustomize overlays and snapshot files. The read-only cluster collector (#7) is next.
 
 ```console
 $ go build -o bin/k8s-doctor ./cmd/k8s-doctor      # or: make build
 $ bin/k8s-doctor rules
+$ bin/k8s-doctor --manifests path/to/overlays/prod       # kustomize overlay, built in-process
+$ bin/k8s-doctor --manifests path/to/manifests/          # plain YAML/JSON manifests
 $ bin/k8s-doctor --snapshot fixtures/image-tag-mutable/positive/snapshot.json --explain
 $ bin/k8s-doctor --snapshot fixtures/image-tag-mutable/positive/snapshot.json --format json
 ```

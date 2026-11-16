@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "testdata/kustomize/base",
+    "overlay": {
+      "name": "base"
+    }
+  },
+  "spec": {
+    "workloads": [
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "web",
+        "namespace": "default",
+        "replicas": 1,
+        "selector": {
+          "app": "web"
+        },
+        "template": {
+          "labels": {
+            "app": "web"
+          },
+          "spec": {
+            "volumes": [
+              {
+                "name": "secret",
+                "type": "secret",
+                "source": "web-secret-f7hcmhdcg9"
+              }
+            ],
+            "containers": [
+              {
+                "name": "web",
+                "image": "ghcr.io/acme/web:latest"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "configMaps": [
+      {
+        "name": "web-config-bmdfmgm6d4",
+        "namespace": "default",
+        "keys": [
+          "GREETING"
+        ]
+      }
+    ],
+    "secrets": [
+      {
+        "name": "web-secret-f7hcmhdcg9",
+        "namespace": "default",
+        "type": "Opaque",
+        "keys": [
+          "TOKEN"
+        ]
+      }
+    ]
+  }
+}

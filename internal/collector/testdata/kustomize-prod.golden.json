@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "testdata/kustomize/overlays/prod",
+    "overlay": {
+      "name": "prod",
+      "namePrefix": "prod-",
+      "nameSuffix": "-v2",
+      "namespace": "shop-prod"
+    }
+  },
+  "spec": {
+    "workloads": [
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "prod-web-v2",
+        "namespace": "shop-prod",
+        "replicas": 3,
+        "selector": {
+          "app": "web"
+        },
+        "template": {
+          "labels": {
+            "app": "web"
+          },
+          "spec": {
+            "volumes": [
+              {
+                "name": "secret",
+                "type": "secret",
+                "source": "prod-web-secret-v2-f7hcmhdcg9"
+              }
+            ],
+            "containers": [
+              {
+                "name": "web",
+                "image": "ghcr.io/acme/web:latest"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "configMaps": [
+      {
+        "name": "prod-web-config-v2-bmdfmgm6d4",
+        "namespace": "shop-prod",
+        "keys": [
+          "GREETING"
+        ]
+      }
+    ],
+    "secrets": [
+      {
+        "name": "prod-web-secret-v2-f7hcmhdcg9",
+        "namespace": "shop-prod",
+        "type": "Opaque",
+        "keys": [
+          "TOKEN"
+        ]
+      }
+    ]
+  }
+}

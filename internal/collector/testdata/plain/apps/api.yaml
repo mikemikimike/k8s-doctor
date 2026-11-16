@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: {app: api}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: api}
+  template:
+    metadata:
+      labels: {app: api}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: api
+          image: ghcr.io/acme/api:1.4.2
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: API_TOKEN
+              value: s3cr3t-literal-token
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: api-db, key: password}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            tcpSocket: {port: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector: {app: api}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app: api}
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api}
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70

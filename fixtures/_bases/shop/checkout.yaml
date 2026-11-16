@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: checkout}}
+  template:
+    metadata: {labels: {app: checkout}}
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/acme/checkout:3.1.0
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+          livenessProbe: {httpGet: {path: /livez, port: 8080}}

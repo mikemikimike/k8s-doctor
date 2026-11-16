@@ -2,6 +2,13 @@
 
 Short notes on what was built and what was learned, newest first.
 
+## 2026-10-22: Manifest and kustomize collector
+
+- Overlays are built in-process with kustomize's `krusty` API, so generators, patches, image overrides and name prefixes behave exactly like `kustomize build`.
+- Normalization from typed Kubernetes API objects to the snapshot lives in one place (`internal/collector/normalize.go`) so the cluster collector (#7) reuses it, which is what keeps the spec section identical across modes.
+- Secrets and ConfigMaps are decoded into a struct whose value type discards its input, so values are never held as Go strings, not just left out of the output. A test greps the snapshot for every planted value.
+- Dependencies are pinned to the newest releases that still build on Go 1.24 (k8s.io/api v0.34.10, kustomize/api v0.21.1). Moving the module to a newer Go would unlock current releases.
+
 ## 2026-10-22: CLI and JSON report
 
 - Versioned JSON report (`v1`) with a JSON Schema that every fixture's report is validated against in tests. Terminal output and, later, HTML and eval all render from it.

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rbalukja15/k8s-doctor/internal/collector"
 	"github.com/rbalukja15/k8s-doctor/internal/config"
 	"github.com/rbalukja15/k8s-doctor/internal/report"
 	"github.com/rbalukja15/k8s-doctor/internal/rules"
@@ -75,7 +76,7 @@ func check(args []string, env Env) int {
 	}
 	fs.StringVar(&o.snapshotPath, "snapshot", "", "analyze a snapshot JSON file")
 	fs.BoolVar(&o.cluster, "cluster", false, "analyze the cluster of the current kubeconfig context (read-only)")
-	fs.StringVar(&o.manifests, "manifests", "", "analyze a folder of manifests or a kustomize overlay")
+	fs.StringVar(&o.manifests, "manifests", "", "analyze a folder of plain manifests, or a kustomize overlay built in-process")
 	fs.StringVar(&o.configPath, "config", "", "config file (default ./"+config.DefaultFileName+" if present)")
 	fs.StringVar(&o.format, "format", "text", "output format: text or json")
 	fs.StringVar(&o.reportPath, "report", "", "also write the JSON report to this file")
@@ -193,7 +194,7 @@ func loadInput(o *checkOptions) (*snapshot.Snapshot, error) {
 	case o.cluster:
 		return nil, errors.New("--cluster needs the cluster collector, which is not built yet (#7)")
 	case o.manifests != "":
-		return nil, errors.New("--manifests needs the manifest collector, which is not built yet (#8)")
+		return collector.Manifests(o.manifests)
 	default:
 		return snapshot.Load(o.snapshotPath)
 	}

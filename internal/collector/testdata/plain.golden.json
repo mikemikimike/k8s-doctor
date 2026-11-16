@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "testdata/plain"
+  },
+  "spec": {
+    "namespaces": [
+      {
+        "name": "batch"
+      }
+    ],
+    "workloads": [
+      {
+        "kind": "CronJob",
+        "apiVersion": "batch/v1",
+        "name": "nightly",
+        "namespace": "batch",
+        "template": {
+          "spec": {
+            "containers": [
+              {
+                "name": "report",
+                "image": "ghcr.io/acme/report:2.0.1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "api",
+        "namespace": "default",
+        "labels": {
+          "app": "api"
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "api"
+        },
+        "template": {
+          "labels": {
+            "app": "api"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "api",
+                "image": "ghcr.io/acme/api:1.4.2",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "livenessProbe": {
+                  "handler": "tcpSocket",
+                  "port": "8080"
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 8080
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "API_TOKEN",
+                    "sourceType": "value"
+                  },
+                  {
+                    "name": "DB_PASSWORD",
+                    "sourceType": "secretKeyRef"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "services": [
+      {
+        "name": "api",
+        "namespace": "default",
+        "selector": {
+          "app": "api"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 80,
+            "targetPort": "http"
+          }
+        ]
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "api",
+        "namespace": "default",
+        "selector": {
+          "app": "api"
+        },
+        "maxUnavailable": "1"
+      }
+    ],
+    "horizontalPodAutoscalers": [
+      {
+        "apiVersion": "autoscaling/v1",
+        "name": "api",
+        "namespace": "default",
+        "targetRef": {
+          "kind": "Deployment",
+          "name": "api"
+        },
+        "minReplicas": 2,
+        "maxReplicas": 6,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": "cpu",
+            "target": "Utilization"
+          }
+        ]
+      }
+    ],
+    "configMaps": [
+      {
+        "name": "api-config",
+        "namespace": "default",
+        "keys": [
+          "LOG_LEVEL"
+        ]
+      }
+    ],
+    "secrets": [
+      {
+        "name": "api-db",
+        "namespace": "default",
+        "type": "Opaque",
+        "keys": [
+          "password",
+          "username"
+        ]
+      }
+    ]
+  }
+}

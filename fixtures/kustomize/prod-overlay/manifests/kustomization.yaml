@@ -1,0 +1,15 @@
+# A prod overlay that undoes good defaults from the base: one replica and a
+# mutable image tag. Findings must name the overlay's prefixed resources.
+namePrefix: prod-
+namespace: shop-prod
+resources:
+  - ../../../_bases/shop
+images:
+  - name: ghcr.io/acme/checkout
+    newTag: latest
+patches:
+  - target: {kind: Deployment, name: checkout}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
