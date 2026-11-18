@@ -1,0 +1,72 @@
+name: Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Runs the ponytail-review skill on the pull request and posts its report
+  # as one comment. It reviews once per PR; re-run the job from the Actions
+  # tab to review again after new pushes.
+  # Fork PRs are skipped: GitHub gives them no secrets and a read-only token.
+  ponytail:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Skip the review (instead of failing) until the secret is set up.
+      - id: token
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set; skipping the review."
+          fi
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      # The plugin marketplace is checked out at a pinned commit and loaded
+      # from disk, so upstream changes only run after this SHA is bumped.
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: DietrichGebert/ponytail
+          ref: 96608e078b2d5ea607c5c3b8b5a54d1c1fba6846
+          path: .ponytail
+          persist-credentials: false
+      - if: steps.token.outputs.present == 'true'
+        uses: anthropics/claude-code-action@cc98b3ae241b0fcfb6a42a2690751afffecb4452 # v1.0.278
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Comments come from github-actions[bot] instead of a separate app.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          include_fix_links: false
+          plugin_marketplaces: ./.ponytail
+          plugins: ponytail@ponytail
+          prompt: |
+            Use the ponytail-review skill to review pull request #${{ github.event.pull_request.number }}
+            in ${{ github.repository }}. The change is the diff between origin/${{ github.base_ref }} and HEAD;
+            read `gh pr view ${{ github.event.pull_request.number }}` for its description.
+            Ignore the `.ponytail/` directory; it is the review tooling, not part of the change.
+
+            Post the full report as a single comment with
+            `gh pr comment ${{ github.event.pull_request.number }} --body-file <file>`.
+            The comment is the report only: no title naming a tool, no signature,
+            no footer, no links to any website.
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "Read,Grep,Glob,Write,Skill,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
