@@ -3,7 +3,9 @@ package collector_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +56,8 @@ func TestGolden(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			got = bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n"))
+			want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))
 			if !bytes.Equal(got, want) {
 				t.Errorf("snapshot differs from %s; rerun with -update if intended\n%s", golden, got)
 			}
@@ -150,14 +154,26 @@ func TestErrors(t *testing.T) {
 		}
 	}
 	notDir := filepath.Join(dup, "a.yaml")
-	cases := map[string]struct{ dir, want string }{
-		"nested kustomization": {"testdata/nested", "contains a kustomization"},
-		"duplicate object":     {dup, "defined more than once"},
-		"missing directory":    {"testdata/nope", "no such file"},
-		"file, not directory":  {notDir, "not a directory"},
+	cases := map[string]struct {
+		dir     string
+		want    string
+		wantErr error
+	}{
+		"nested kustomization": {dir: "testdata/nested", want: "contains a kustomization"},
+		"duplicate object":     {dir: dup, want: "defined more than once"},
+		"missing directory":    {dir: "testdata/nope", wantErr: fs.ErrNotExist},
+		"file, not directory":  {dir: notDir, want: "not a directory"},
 	}
 	for name, c := range cases {
-		if _, err := collector.Manifests(c.dir); err == nil || !strings.Contains(err.Error(), c.want) {
+		_, err := collector.Manifests(c.dir)
+		if err == nil {
+			t.Errorf("%s: expected an error", name)
+			continue
+		}
+		if c.wantErr != nil && !errors.Is(err, c.wantErr) {
+			t.Errorf("%s: error %v, want %v", name, err, c.wantErr)
+		}
+		if c.want != "" && !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: error %v, want one containing %q", name, err, c.want)
 		}
 	}

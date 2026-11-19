@@ -203,6 +203,7 @@ func loadRules(t *testing.T, file, kind string) []rbacv1.PolicyRule {
 	if err != nil {
 		t.Fatal(err)
 	}
+	data = []byte(strings.ReplaceAll(string(data), "\r\n", "\n"))
 	for _, doc := range strings.Split(string(data), "\n---\n") {
 		var r struct {
 			Kind  string              `json:"kind"`
