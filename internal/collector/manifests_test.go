@@ -40,6 +40,7 @@ func TestGolden(t *testing.T) {
 		"plain":          "testdata/plain",
 		"kustomize-base": "testdata/kustomize/base",
 		"kustomize-prod": "testdata/kustomize/overlays/prod",
+		"crossmode":      crossModeDir,
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := marshal(t, collect(t, dir))
@@ -71,8 +72,9 @@ func TestNoSecretValues(t *testing.T) {
 		"supersecret-password", "c3VwZXJzZWNyZXQtcGFzc3dvcmQ=", "plaintext-username-value",
 		"debug-config-value", "s3cr3t-literal-token",
 		"generated-secret-token", "hello-from-generator",
+		"crossmode-configmap-value", "crossmode-secret-value", "crossmode-env-value",
 	}
-	for _, dir := range []string{"testdata/plain", "testdata/kustomize/overlays/prod"} {
+	for _, dir := range []string{"testdata/plain", "testdata/kustomize/overlays/prod", crossModeDir} {
 		out := string(marshal(t, collect(t, dir)))
 		for _, leak := range leaks {
 			if strings.Contains(out, leak) {

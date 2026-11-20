@@ -92,9 +92,16 @@ func podSpec(p *corev1.PodSpec) snapshot.PodSpec {
 		Containers:         make([]snapshot.Container, 0, len(p.Containers)),
 	}
 	if sc := p.SecurityContext; sc != nil {
-		out.SecurityContext = &snapshot.PodSecurityContext{RunAsNonRoot: sc.RunAsNonRoot, RunAsUser: sc.RunAsUser}
+		psc := snapshot.PodSecurityContext{RunAsNonRoot: sc.RunAsNonRoot, RunAsUser: sc.RunAsUser}
 		if sc.SeccompProfile != nil {
-			out.SecurityContext.SeccompProfile = &snapshot.SeccompProfile{Type: string(sc.SeccompProfile.Type)}
+			psc.SeccompProfile = &snapshot.SeccompProfile{Type: string(sc.SeccompProfile.Type)}
+		}
+		// The API server defaults an absent pod securityContext to {}, so
+		// one with none of the recorded fields is kept as absent, which
+		// keeps both modes identical. That includes one that sets only
+		// fields the snapshot does not model, such as fsGroup.
+		if psc != (snapshot.PodSecurityContext{}) {
+			out.SecurityContext = &psc
 		}
 	}
 	if a := p.Affinity; a != nil && a.PodAntiAffinity != nil {

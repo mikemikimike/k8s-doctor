@@ -2,6 +2,12 @@
 
 Short notes on what was built and what was learned, newest first.
 
+## 2026-11-16: Cross-mode collector tests
+
+- One set of manifests (`internal/collector/testdata/crossmode`, all five workload kinds plus Service, PDB, HPA, Secret and ConfigMap) is collected in manifest mode and, after `kubectl apply` in kind, in cluster mode. The `spec` sections must match once server defaults are accounted for.
+- The test found a real mismatch: the API server turns an absent pod `securityContext` into `{}`. The normalizer now records an empty one as absent in both modes.
+- The comparison fills unset fields with their server default rather than dropping the field, so it cannot hide a manifest that sets a different value.
+
 ## 2026-10-22: Read-only cluster collector
 
 - client-go typed clients for workloads and runtime, plus the metadata client for Secrets and ConfigMaps so values never cross the wire. The cost is that cluster snapshots carry no key names.

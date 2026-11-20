@@ -1,0 +1,285 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "testdata/crossmode"
+  },
+  "spec": {
+    "namespaces": [
+      {
+        "name": "crossmode",
+        "labels": {
+          "team": "platform"
+        }
+      }
+    ],
+    "workloads": [
+      {
+        "kind": "CronJob",
+        "apiVersion": "batch/v1",
+        "name": "nightly",
+        "namespace": "crossmode",
+        "template": {
+          "spec": {
+            "containers": [
+              {
+                "name": "nightly",
+                "image": "registry.k8s.io/pause:3.10",
+                "readinessProbe": {
+                  "handler": "exec",
+                  "failureThreshold": 5
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "DaemonSet",
+        "apiVersion": "apps/v1",
+        "name": "agent",
+        "namespace": "crossmode",
+        "selector": {
+          "app": "agent"
+        },
+        "template": {
+          "labels": {
+            "app": "agent"
+          },
+          "spec": {
+            "containers": [
+              {
+                "name": "agent",
+                "image": "registry.k8s.io/pause:3.10",
+                "imagePullPolicy": "IfNotPresent"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "web",
+        "namespace": "crossmode",
+        "labels": {
+          "app": "web"
+        },
+        "selector": {
+          "app": "web"
+        },
+        "template": {
+          "labels": {
+            "app": "web"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 65532,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "affinity": {
+              "podAntiAffinity": {
+                "preferredTopologyKeys": [
+                  "kubernetes.io/hostname"
+                ]
+              }
+            },
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "topology.kubernetes.io/zone",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
+            ],
+            "volumes": [
+              {
+                "name": "config",
+                "type": "configMap",
+                "source": "web-config"
+              },
+              {
+                "name": "tmp",
+                "type": "emptyDir"
+              }
+            ],
+            "containers": [
+              {
+                "name": "web",
+                "image": "registry.k8s.io/pause:3.10",
+                "resources": {
+                  "requests": {
+                    "cpu": "50m",
+                    "memory": "32Mi"
+                  },
+                  "limits": {
+                    "memory": "64Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "tcpSocket",
+                  "port": "http"
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "initialDelaySeconds": 5,
+                  "periodSeconds": 20
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 8080
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "LITERAL",
+                    "sourceType": "value"
+                  },
+                  {
+                    "name": "DB_PASSWORD",
+                    "sourceType": "secretKeyRef"
+                  },
+                  {
+                    "name": "POD_NAME",
+                    "sourceType": "fieldRef"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "Job",
+        "apiVersion": "batch/v1",
+        "name": "migrate",
+        "namespace": "crossmode",
+        "template": {
+          "labels": {
+            "app": "migrate"
+          },
+          "spec": {
+            "containers": [
+              {
+                "name": "migrate",
+                "image": "registry.k8s.io/pause:3.10"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "StatefulSet",
+        "apiVersion": "apps/v1",
+        "name": "cache",
+        "namespace": "crossmode",
+        "replicas": 2,
+        "selector": {
+          "app": "cache"
+        },
+        "template": {
+          "labels": {
+            "app": "cache"
+          },
+          "spec": {
+            "containers": [
+              {
+                "name": "cache",
+                "image": "registry.k8s.io/pause:latest",
+                "ports": [
+                  {
+                    "containerPort": 6379,
+                    "protocol": "TCP"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "services": [
+      {
+        "name": "web",
+        "namespace": "crossmode",
+        "selector": {
+          "app": "web"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 80,
+            "targetPort": "http"
+          },
+          {
+            "name": "metrics",
+            "port": 9090
+          }
+        ]
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "web",
+        "namespace": "crossmode",
+        "selector": {
+          "app": "web"
+        },
+        "minAvailable": "1"
+      }
+    ],
+    "horizontalPodAutoscalers": [
+      {
+        "apiVersion": "autoscaling/v2",
+        "name": "web",
+        "namespace": "crossmode",
+        "targetRef": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "maxReplicas": 4,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": "cpu",
+            "target": "Utilization"
+          }
+        ]
+      }
+    ],
+    "configMaps": [
+      {
+        "name": "web-config",
+        "namespace": "crossmode",
+        "keys": [
+          "LOG_LEVEL"
+        ]
+      }
+    ],
+    "secrets": [
+      {
+        "name": "web-db",
+        "namespace": "crossmode",
+        "type": "Opaque",
+        "keys": [
+          "password"
+        ]
+      }
+    ]
+  }
+}

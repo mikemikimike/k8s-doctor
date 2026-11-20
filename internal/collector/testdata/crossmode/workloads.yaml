@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cache
+  namespace: crossmode
+spec:
+  serviceName: cache
+  replicas: 2
+  selector:
+    matchLabels: {app: cache}
+  template:
+    metadata:
+      labels: {app: cache}
+    spec:
+      containers:
+        - name: cache
+          image: registry.k8s.io/pause:latest
+          ports:
+            - containerPort: 6379
+              protocol: TCP
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: agent
+  namespace: crossmode
+spec:
+  selector:
+    matchLabels: {app: agent}
+  template:
+    metadata:
+      labels: {app: agent}
+    spec:
+      securityContext: {} # same as absent: the API server defaults it to {}
+      containers:
+        - name: agent
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: crossmode
+spec:
+  template:
+    metadata:
+      labels: {app: migrate}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.k8s.io/pause:3.10
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly
+  namespace: crossmode
+spec:
+  schedule: "0 3 * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: nightly
+              image: registry.k8s.io/pause:3.10
+              readinessProbe:
+                exec: {command: [/bin/true]}
+                failureThreshold: 5

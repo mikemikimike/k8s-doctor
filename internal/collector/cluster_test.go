@@ -81,14 +81,10 @@ func fakeClients(t *testing.T) (*collector.Clients, *fake.Clientset) {
 		},
 	)
 
-	scheme := metadatafake.NewTestScheme()
-	if err := metav1.AddMetaToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
 	pom := func(kind, ns, name string) runtime.Object {
 		return &metav1.PartialObjectMetadata{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: kind}, ObjectMeta: meta(ns, name)}
 	}
-	md := metadatafake.NewSimpleMetadataClient(scheme, pom("Secret", "shop", "api-db"), pom("ConfigMap", "shop", "api-config"))
+	md := metadatafake.NewSimpleMetadataClient(metadataScheme(t), pom("Secret", "shop", "api-db"), pom("ConfigMap", "shop", "api-config"))
 	return &collector.Clients{Typed: typed, Metadata: md, ContextName: "kind-test"}, typed
 }
 

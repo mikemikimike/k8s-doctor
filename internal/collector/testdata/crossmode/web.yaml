@@ -1,0 +1,110 @@
+# replicas, imagePullPolicy, probe timings, port protocols, Service type and
+# targetPort are left for the API server to default.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: crossmode
+  labels: {app: web}
+spec:
+  selector:
+    matchLabels: {app: web}
+  template:
+    metadata:
+      labels: {app: web}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: web}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: web}
+      volumes:
+        - name: config
+          configMap: {name: web-config}
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: web
+          image: registry.k8s.io/pause:3.10
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: LITERAL
+              value: crossmode-env-value
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: web-db, key: password}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {memory: 64Mi}
+          readinessProbe:
+            tcpSocket: {port: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/web
+            - name: tmp
+              mountPath: /tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: crossmode
+spec:
+  selector: {app: web}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9090
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: crossmode
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: web}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+  namespace: crossmode
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: web}
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 70}
