@@ -133,7 +133,9 @@ func TestInputAndFlagErrors(t *testing.T) {
 	}{
 		{"no input", []string{"check"}, cli.ExitUsage, "exactly one of"},
 		{"two inputs", []string{"check", "--snapshot", clean, "--cluster"}, cli.ExitUsage, "exactly one of"},
-		{"cluster not built", []string{"check", "--cluster"}, cli.ExitError, "#7"},
+		{"cluster bad kubeconfig", []string{"check", "--cluster", "--kubeconfig", "no-such-kubeconfig"}, cli.ExitError, "kubeconfig"},
+		{"cluster flags without --cluster", []string{"check", "--snapshot", clean, "--namespace", "shop"}, cli.ExitUsage, "only apply to --cluster"},
+		{"skip-secrets without --cluster", []string{"check", "--manifests", "testdata", "--skip-secrets"}, cli.ExitUsage, "only apply to --cluster"},
 		{"manifests missing dir", []string{"check", "--manifests", "no-such-dir"}, cli.ExitError, "no-such-dir"},
 		{"missing file", []string{"check", "--snapshot", "nope.json"}, cli.ExitError, "nope.json"},
 		{"bad format", []string{"check", "--snapshot", clean, "--format", "yaml"}, cli.ExitUsage, "--format"},
@@ -176,5 +178,22 @@ func TestManifests(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output is missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestSnapshotCommand(t *testing.T) {
+	code, out, errOut := run("snapshot", "--manifests", "../../fixtures/kustomize/prod-overlay/manifests")
+	if code != cli.ExitOK {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	var s map[string]any
+	if err := json.Unmarshal([]byte(out), &s); err != nil || s["mode"] != "manifest" {
+		t.Fatalf("not a manifest snapshot: %v\n%s", err, out)
+	}
+	if code, _, errOut := run("snapshot"); code != cli.ExitUsage || !strings.Contains(errOut, "--cluster or --manifests") {
+		t.Errorf("no input: code %d, stderr %q", code, errOut)
+	}
+	if code, _, _ := run("snapshot", "--snapshot", clean); code != cli.ExitUsage {
+		t.Errorf("--snapshot should not be a snapshot flag, code %d", code)
 	}
 }

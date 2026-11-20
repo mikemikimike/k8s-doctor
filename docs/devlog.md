@@ -2,6 +2,13 @@
 
 Short notes on what was built and what was learned, newest first.
 
+## 2026-10-22: Read-only cluster collector
+
+- client-go typed clients for workloads and runtime, plus the metadata client for Secrets and ConfigMaps so values never cross the wire. The cost is that cluster snapshots carry no key names.
+- Pods are attributed to their top-level workload through owner references (ReplicaSet to Deployment, Job to CronJob), using one ReplicaSet and Job list per namespace instead of a lookup per Pod.
+- `deploy/rbac` ships the minimal ClusterRole. A unit test keeps it in sync with the resources the collector reads, and `make test-kind` runs the collector as a ServiceAccount bound only to that role, then checks no planted Secret, ConfigMap or env value appears in the output.
+- The fake clientset test also asserts that every request the collector makes is a `get` or `list`.
+
 ## 2026-10-22: Manifest and kustomize collector
 
 - Overlays are built in-process with kustomize's `krusty` API, so generators, patches, image overrides and name prefixes behave exactly like `kustomize build`.

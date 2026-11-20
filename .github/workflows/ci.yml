@@ -50,3 +50,19 @@ jobs:
         run: make test
       - name: Build
         run: make build
+
+  kind:
+    name: Cluster collector (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Cache pinned tools
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: tools-kind-${{ runner.os }}-${{ hashFiles('Makefile', 'go.mod') }}
+      - name: Run against a kind cluster as the read-only ServiceAccount
+        run: make test-kind

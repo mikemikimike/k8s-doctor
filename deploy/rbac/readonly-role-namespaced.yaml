@@ -1,0 +1,54 @@
+# Read-only access for `k8s-doctor --cluster --namespace my-app --skip-secrets`,
+# limited to one namespace and with no access to Secrets at all.
+#
+# Replace my-app with the namespace to check (or set it with kustomize), then:
+#
+#   kubectl apply -f deploy/rbac/readonly-role-namespaced.yaml
+#
+# get on namespaces is allowed here because a Role in my-app covers reading
+# the my-app Namespace object itself, which --namespace needs. A test keeps
+# these rules in sync with the collector.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-doctor
+  namespace: my-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k8s-doctor-readonly
+  namespace: my-app
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods, services, events, configmaps]
+    verbs: [list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [list]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [list]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [list]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8s-doctor-readonly
+  namespace: my-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: k8s-doctor-readonly
+subjects:
+  - kind: ServiceAccount
+    name: k8s-doctor
+    namespace: my-app

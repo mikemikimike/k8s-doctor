@@ -6,6 +6,7 @@ GOLANGCI_LINT_VERSION ?= v2.5.0
 KUSTOMIZE_VERSION     ?= v5.8.3
 KUBECONFORM_VERSION   ?= v0.8.0
 K8S_SCHEMA_VERSION    ?= v1.31.0
+KIND_VERSION          ?= v0.30.0
 
 BIN         := $(CURDIR)/bin
 CACHE       := $(CURDIR)/.cache
@@ -49,6 +50,10 @@ fmt: | $(GOLANGCI_LINT) ## Format the code with gofumpt and goimports
 fmt-check: | $(GOLANGCI_LINT) ## Fail if any file needs formatting
 	$(GOLANGCI_LINT) fmt --diff ./...
 
+.PHONY: test-kind
+test-kind: build $(BIN)/kind ## Run the cluster collector against a kind cluster (needs docker, kubectl, jq)
+	KIND=$(BIN)/kind K8S_DOCTOR=$(BIN)/k8s-doctor test/kind/run.sh
+
 .PHONY: eval
 eval: ## Measure detection precision/recall over fixtures (stub until #21)
 	@echo "make eval: not implemented yet (tracked in #21). 'make test' already runs every fixture."
@@ -72,6 +77,9 @@ $(BIN)/golangci-lint:
 
 $(BIN)/kustomize:
 	GOBIN=$(BIN) go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)
+
+$(BIN)/kind:
+	GOBIN=$(BIN) go install sigs.k8s.io/kind@$(KIND_VERSION)
 
 $(BIN)/kubeconform:
 	GOBIN=$(BIN) go install github.com/yannh/kubeconform/cmd/kubeconform@$(KUBECONFORM_VERSION)

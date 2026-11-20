@@ -8,12 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rbalukja15/k8s-doctor/internal/collector"
 	"github.com/rbalukja15/k8s-doctor/internal/config"
 	"github.com/rbalukja15/k8s-doctor/internal/report"
 	"github.com/rbalukja15/k8s-doctor/internal/rules"
 	"github.com/rbalukja15/k8s-doctor/internal/rules/checks"
-	"github.com/rbalukja15/k8s-doctor/internal/snapshot"
 	"github.com/rbalukja15/k8s-doctor/internal/version"
 )
 
@@ -52,18 +50,16 @@ func (l *listFlag) Set(v string) error {
 }
 
 type checkOptions struct {
-	snapshotPath string
-	cluster      bool
-	manifests    string
-	configPath   string
-	format       string
-	reportPath   string
-	failOn       string
-	color        string
-	noLLM        bool
-	explain      bool
-	enable       listFlag
-	disable      listFlag
+	input      inputOptions
+	configPath string
+	format     string
+	reportPath string
+	failOn     string
+	color      string
+	noLLM      bool
+	explain    bool
+	enable     listFlag
+	disable    listFlag
 }
 
 func check(args []string, env Env) int {
@@ -74,9 +70,7 @@ func check(args []string, env Env) int {
 		fmt.Fprint(env.Stderr, checkUsage)
 		fs.PrintDefaults()
 	}
-	fs.StringVar(&o.snapshotPath, "snapshot", "", "analyze a snapshot JSON file")
-	fs.BoolVar(&o.cluster, "cluster", false, "analyze the cluster of the current kubeconfig context (read-only)")
-	fs.StringVar(&o.manifests, "manifests", "", "analyze a folder of plain manifests, or a kustomize overlay built in-process")
+	o.input.register(fs, true)
 	fs.StringVar(&o.configPath, "config", "", "config file (default ./"+config.DefaultFileName+" if present)")
 	fs.StringVar(&o.format, "format", "text", "output format: text or json")
 	fs.StringVar(&o.reportPath, "report", "", "also write the JSON report to this file")
@@ -121,7 +115,7 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 		return 0, err
 	}
 
-	snap, err := loadInput(o)
+	snap, err := o.input.load()
 	if err != nil {
 		return 0, err
 	}
@@ -178,26 +172,6 @@ func parseFailOn(v string) (rules.Severity, error) {
 		return 0, fmt.Errorf("%w: --fail-on: %w", errUsage, err)
 	}
 	return s, nil
-}
-
-func loadInput(o *checkOptions) (*snapshot.Snapshot, error) {
-	n := 0
-	for _, set := range []bool{o.snapshotPath != "", o.cluster, o.manifests != ""} {
-		if set {
-			n++
-		}
-	}
-	if n != 1 {
-		return nil, fmt.Errorf("%w: exactly one of --snapshot, --cluster or --manifests is required", errUsage)
-	}
-	switch {
-	case o.cluster:
-		return nil, errors.New("--cluster needs the cluster collector, which is not built yet (#7)")
-	case o.manifests != "":
-		return collector.Manifests(o.manifests)
-	default:
-		return snapshot.Load(o.snapshotPath)
-	}
 }
 
 func loadConfig(path string) (*config.Config, error) {

@@ -47,6 +47,8 @@ Invariants checked on every load:
 - Environment variable literal values. Only the variable name and its source type (`value`, `configMapKeyRef`, `secretKeyRef`, `fieldRef`, ...) are kept.
 - ConfigMap data (keys only).
 
+In cluster mode Secrets and ConfigMaps carry names only: key names live in `data`, which the metadata-only read never returns. Manifest mode can list key names because it parses the file locally. Rules must not depend on key names in cluster mode.
+
 ### How a rule declares the mode it needs
 
 Every rule implements `Modes()`. A rule that reads `runtime` (crashloops, OOMKilled) returns only `cluster`. When the snapshot's mode is not in a rule's list, the engine does not call the rule and records it under "not run" with the reason, so reports never imply a check passed when it was skipped.
@@ -61,13 +63,16 @@ The cluster collector needs exactly this, shipped as `deploy/rbac/readonly-clust
 
 | API group | Resources | Verbs |
 |---|---|---|
-| `""` | namespaces, pods, services, events, configmaps, secrets | get, list, watch |
-| `apps` | deployments, statefulsets, daemonsets, replicasets | get, list, watch |
-| `batch` | jobs, cronjobs | get, list, watch |
-| `policy` | poddisruptionbudgets | get, list, watch |
-| `autoscaling` | horizontalpodautoscalers | get, list, watch |
+| `""` | namespaces | get, list |
+| `""` | pods, services, events, configmaps, secrets | list |
+| `apps` | deployments, statefulsets, daemonsets, replicasets | list |
+| `batch` | jobs, cronjobs | list |
+| `policy` | poddisruptionbudgets | list |
+| `autoscaling` | horizontalpodautoscalers | list |
 
-`secrets` and `configmaps` are listed because metadata-only reads still need `list`; the collector never requests their bodies. The #7 test runs the collector in kind under a ServiceAccount bound only to this role, which proves no write verb is needed.
+There is no `watch` (the collector takes one snapshot) and no `get` on Secrets, so the identity cannot fetch a Secret by name. `deploy/rbac/readonly-role-namespaced.yaml` is the single-namespace variant for `--namespace <ns> --skip-secrets`, with no Secret access at all.
+
+`secrets` and `configmaps` are listed because metadata-only reads still need `list`; the collector never requests their bodies. System namespaces (`kube-system`, `kube-public`, `kube-node-lease`, `local-path-storage`) are skipped unless named with `--namespace`. The #7 test (`make test-kind`, a CI job) runs the collector in kind under a ServiceAccount bound only to this role, and again under one bound only to the namespaced Role, which proves nothing more is needed.
 
 ### How the two modes converge
 

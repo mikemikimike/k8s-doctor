@@ -22,7 +22,7 @@ flowchart LR
 | Stage | Package | Issue | Status |
 |---|---|---|---|
 | Snapshot model | `internal/snapshot` | #6 | Done |
-| Cluster collector | `internal/collector` | #7 | Planned |
+| Cluster collector | `internal/collector` | #7 | Done |
 | Manifest / kustomize collector | `internal/collector` | #8 | Done |
 | Rule engine, severity, finding IDs, config | `internal/rules`, `internal/config` | #10 | Done |
 | Built-in rules | `internal/rules/checks` | #11, #12, #13 | Batch 1 done |

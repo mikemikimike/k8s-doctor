@@ -1,6 +1,9 @@
 # CLI
 
 ```console
+$ k8s-doctor --cluster                                   # the current kubeconfig context, read-only
+$ k8s-doctor --cluster --context prod --namespace shop   # one context, selected namespaces
+$ k8s-doctor snapshot --cluster > snapshot.json          # collect only, analyze later or elsewhere
 $ k8s-doctor --manifests deploy/overlays/prod           # a kustomize overlay, built in-process
 $ k8s-doctor --manifests deploy/                         # a folder of plain manifests
 $ k8s-doctor check --snapshot snapshot.json            # or simply: k8s-doctor --snapshot snapshot.json
@@ -10,7 +13,16 @@ $ k8s-doctor rules                                      # list built-in rules
 $ k8s-doctor schema                                     # JSON Schema of the report
 ```
 
-`--cluster` (#7) is accepted but exits with an error until the cluster collector lands.
+Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doctor snapshot` takes `--cluster` or `--manifests` and prints the snapshot JSON instead of a report, which is useful for sharing what was analyzed or building fixtures.
+
+### Cluster mode
+
+- Read-only: the collector only issues `get` (on namespaces) and `list` requests. [`deploy/rbac/readonly-clusterrole.yaml`](../deploy/rbac/readonly-clusterrole.yaml) is the minimal ClusterRole, plus a ServiceAccount and binding to run it under. For a single namespace, [`deploy/rbac/readonly-role-namespaced.yaml`](../deploy/rbac/readonly-role-namespaced.yaml) is a Role with no Secret access, used with `--namespace <ns> --skip-secrets`.
+- Without `--namespace`, each kind is listed once across the cluster and system namespaces (`kube-system`, `kube-public`, `kube-node-lease`, `local-path-storage`) are dropped. Name namespaces with `--namespace` to narrow it, or to include a system namespace explicitly. Lists are paged, 500 objects at a time.
+- Any refused or failed request fails the run, naming the resource and, for a 403, the missing grant. A partial snapshot would let rules pass on data they never saw.
+- Secrets and ConfigMaps are listed through the metadata API, so their values are never sent to k8s-doctor. In cluster mode the snapshot records their names only, not their key names. `--skip-secrets` leaves Secrets out entirely.
+- `list` on Secrets cluster-wide is a sensitive grant even though k8s-doctor only reads metadata: anything using the same identity could read the values. Bind the ClusterRole only to k8s-doctor, or use `--skip-secrets` and drop the `secrets` entry.
+- Pods, container statuses (init containers included, marked `init`) and Events go into `runtime`. Event messages are kept as controllers wrote them and can include names, URLs or other text you may not want to share; the snapshot's `source.cluster` is your kubeconfig context name. Review a snapshot before sharing it. Each Pod is attributed to its top-level workload (ReplicaSet to Deployment, Job to CronJob). Jobs created by a CronJob are folded into the CronJob rather than listed as workloads.
 
 ### Manifests mode
 
@@ -26,7 +38,12 @@ $ k8s-doctor schema                                     # JSON Schema of the rep
 | Flag | Default | Meaning |
 |---|---|---|
 | `--snapshot <file>` | | Analyze a snapshot JSON file ([ADR-0002](adr/0002-collector-and-snapshot.md)). |
-| `--cluster` | | Analyze the current kubeconfig context, read-only (#7). |
+| `--cluster` | | Analyze a live cluster, read-only. |
+| `--kubeconfig <file>` | `$KUBECONFIG` or `~/.kube/config` | Kubeconfig for `--cluster`. |
+| `--context <name>` | current context | Kubeconfig context for `--cluster`. |
+| `--namespace <ns>` | all but system namespaces | Namespaces for `--cluster`, repeatable or comma-separated. |
+| `--skip-secrets` | off | With `--cluster`, do not list Secrets, so the identity needs no access to them. |
+| `--timeout` | `2m` | Time limit for collecting from the cluster. |
 | `--manifests <dir>` | | Analyze a folder of plain manifests, or a kustomize overlay built in-process. |
 | `--config <file>` | `./.k8s-doctor.yaml` if present | Rule toggles and severity overrides ([rules](rules.md#configuring-rules)). |
 | `--enable-rule`, `--disable-rule` | | Rule IDs, repeatable or comma-separated. Applied on top of the config file. Naming a rule in both is an error. |

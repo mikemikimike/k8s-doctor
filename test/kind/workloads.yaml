@@ -1,0 +1,76 @@
+# Workloads for the kind integration test. Images need not be pullable:
+# the test checks what the collector can read, not that pods run.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: api-db, namespace: shop}
+type: Opaque
+stringData:
+  password: kind-test-secret-value-do-not-leak
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: api-config, namespace: shop}
+data:
+  LOG_LEVEL: kind-test-configmap-value
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: shop}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers:
+        - name: api
+          image: registry.k8s.io/pause:3.10
+          env:
+            - name: API_TOKEN
+              value: kind-test-env-value
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: api-db, key: password}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api, namespace: shop}
+spec:
+  selector: {app: api}
+  ports: [{port: 80, targetPort: 8080}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: api, namespace: shop}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: api}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: api, namespace: shop}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api}
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: nightly, namespace: shop}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: report
+              image: registry.k8s.io/pause:3.10

@@ -28,9 +28,11 @@ func (p *Pod) Ref() ResourceRef {
 
 // ContainerStatus is the status of one container in a pod.
 type ContainerStatus struct {
-	Name         string `json:"name"`
-	Ready        bool   `json:"ready"`
-	RestartCount int32  `json:"restartCount"`
+	Name string `json:"name"`
+	// Init marks an init container, which must exit before the others start.
+	Init         bool  `json:"init,omitempty"`
+	Ready        bool  `json:"ready"`
+	RestartCount int32 `json:"restartCount"`
 	// State is "running", "waiting" or "terminated".
 	State string `json:"state"`
 	// Reason is the waiting or terminated reason, e.g. "CrashLoopBackOff".

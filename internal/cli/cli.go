@@ -22,6 +22,7 @@ Usage:
 
 Commands:
   check     Analyze a snapshot, cluster or manifests folder and report findings
+  snapshot  Collect a cluster or manifests folder and print the snapshot JSON
   rules     List the built-in rules
   schema    Print the JSON Schema of the --format json report
   version   Print the version
@@ -90,6 +91,8 @@ func RunEnv(args []string, env Env) int {
 		return ExitOK
 	case "check":
 		return check(args[1:], env)
+	case "snapshot":
+		return snapshotCmd(args[1:], env)
 	}
 	// Bare flags mean check: `k8s-doctor --manifests ./deploy`.
 	if strings.HasPrefix(args[0], "-") {

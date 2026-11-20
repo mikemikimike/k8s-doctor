@@ -29,7 +29,7 @@ Go also ships as one static binary per platform, which is what an SRE wants to d
 
 k8s-doctor never mutates a cluster.
 
-- The cluster collector only uses `get`, `list` and `watch`. It ships a ClusterRole with only those verbs and is tested under it (#7).
+- The cluster collector only uses `get` and `list`. It ships a ClusterRole with only those verbs and is tested under it (#7).
 - Patches are written as files or diffs. There is no `apply` code path.
 - The only write the project ever performs is opening a pull request against a manifests repository (#24). It is opt-in (`--open-pr`), off by default, and needs a token scoped to that one repository.
 
