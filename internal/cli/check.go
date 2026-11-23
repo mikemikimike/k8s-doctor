@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,9 +10,11 @@ import (
 	"time"
 
 	"github.com/rbalukja15/k8s-doctor/internal/config"
+	"github.com/rbalukja15/k8s-doctor/internal/llm"
 	"github.com/rbalukja15/k8s-doctor/internal/report"
 	"github.com/rbalukja15/k8s-doctor/internal/rules"
 	"github.com/rbalukja15/k8s-doctor/internal/rules/checks"
+	"github.com/rbalukja15/k8s-doctor/internal/snapshot"
 	"github.com/rbalukja15/k8s-doctor/internal/version"
 )
 
@@ -35,6 +38,11 @@ Flags:
 // errUsage marks errors that should exit with ExitUsage.
 var errUsage = errors.New("usage")
 
+const (
+	llmExplanationDeadline = 2 * time.Minute
+	llmExplanationWorkers  = 4
+)
+
 // listFlag is a repeatable, comma-separated string flag.
 type listFlag []string
 
@@ -56,6 +64,7 @@ type checkOptions struct {
 	reportPath string
 	failOn     string
 	color      string
+	llm        bool
 	noLLM      bool
 	explain    bool
 	enable     listFlag
@@ -76,6 +85,7 @@ func check(args []string, env Env) int {
 	fs.StringVar(&o.reportPath, "report", "", "also write the JSON report to this file")
 	fs.StringVar(&o.failOn, "fail-on", "high", "lowest severity that makes the exit code non-zero: critical, high, medium, low or none")
 	fs.StringVar(&o.color, "color", "auto", "colorize text output: auto, always or never (NO_COLOR is honored)")
+	fs.BoolVar(&o.llm, "llm", false, "use the configured LLM explanation provider")
 	fs.BoolVar(&o.noLLM, "no-llm", false, "never call an LLM; explanations come from rule descriptions")
 	fs.BoolVar(&o.explain, "explain", false, "print each finding's explanation in text output")
 	fs.Var(&o.enable, "enable-rule", "enable rules by ID (repeatable, comma-separated)")
@@ -133,12 +143,36 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 		return 0, err
 	}
 	res := engine.Run(snap)
-	// The LLM layer (#26) does not exist yet, so every run is effectively
-	// --no-llm and the report says so.
+	explanations := map[string]string{}
+	if o.llm && !o.noLLM && cfg.LLM.Provider == "" {
+		return 0, fmt.Errorf("%w: --llm requires llm.provider in the config", errUsage)
+	}
+	llmEnabled := o.llm && !o.noLLM
+	llmUsed := false
+	if llmEnabled {
+		provider, err := llm.NewFromConfig(cfg.LLM, env.Getenv)
+		if err != nil {
+			return 0, err
+		}
+		var failed int
+		var firstFailure error
+		ctx, cancel := context.WithTimeout(context.Background(), llmExplanationDeadline)
+		explanations, failed, firstFailure = explainFindings(ctx, provider, res.Findings, reg, *snap)
+		cancel()
+		llmUsed = len(explanations) > 0
+		if failed > 0 {
+			reason := "unknown LLM error"
+			if firstFailure != nil {
+				reason = strings.TrimSpace(llm.RedactText(firstFailure.Error()))
+			}
+			fmt.Fprintf(env.Stderr, "warning: LLM explanations failed for %d of %d findings (first failure: %s); using rule descriptions\n", failed, len(res.Findings), reason)
+		}
+	}
 	rep := report.Build(snap, reg, engine, res, report.Options{
-		Version: version.Version,
-		Now:     time.Now(),
-		LLM:     false,
+		Version:      version.Version,
+		Now:          time.Now(),
+		LLM:          llmUsed,
+		Explanations: explanations,
 	})
 
 	if o.reportPath != "" {
@@ -160,6 +194,64 @@ func runCheck(o *checkOptions, env Env) (int, error) {
 		return ExitOK, nil
 	}
 	return ExitCodeFor(worst), nil
+}
+
+type explanationResult struct {
+	id   string
+	text string
+	err  error
+}
+
+func explainFindings(ctx context.Context, provider llm.Client, findings []rules.Finding, reg *rules.Registry, snap snapshot.Snapshot) (map[string]string, int, error) {
+	explanations := make(map[string]string, len(findings))
+	if len(findings) == 0 {
+		return explanations, 0, nil
+	}
+
+	jobs := make(chan rules.Finding, len(findings))
+	results := make(chan explanationResult, len(findings))
+	for _, finding := range findings {
+		jobs <- finding
+	}
+	close(jobs)
+
+	workers := min(llmExplanationWorkers, len(findings))
+	for range workers {
+		go func() {
+			for finding := range jobs {
+				if err := ctx.Err(); err != nil {
+					results <- explanationResult{id: finding.ID, err: err}
+					continue
+				}
+				rule, ok := reg.Get(finding.RuleID)
+				if !ok {
+					results <- explanationResult{id: finding.ID, err: fmt.Errorf("rule %q is not registered", finding.RuleID)}
+					continue
+				}
+				prompt := llm.BuildPrompt(finding, rule.Description(), snap)
+				text, err := provider.Explain(ctx, prompt)
+				results <- explanationResult{id: finding.ID, text: text, err: err}
+			}
+		}()
+	}
+
+	failed := 0
+	var firstFailure error
+	for range findings {
+		result := <-results
+		if result.err != nil || result.text == "" {
+			failed++
+			if firstFailure == nil {
+				firstFailure = result.err
+				if firstFailure == nil {
+					firstFailure = errors.New("provider returned an empty explanation")
+				}
+			}
+			continue
+		}
+		explanations[result.id] = result.text
+	}
+	return explanations, failed, firstFailure
 }
 
 // parseFailOn returns the threshold severity, or 0 for "none".

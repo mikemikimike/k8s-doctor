@@ -53,7 +53,7 @@ type Input struct {
 	Cluster string        `json:"cluster,omitempty"`
 	Path    string        `json:"path,omitempty"`
 	Overlay string        `json:"overlay,omitempty"`
-	// LLM reports whether the LLM layer was enabled for this run.
+	// LLM reports whether at least one finding received an LLM explanation.
 	LLM bool `json:"llm"`
 }
 
@@ -104,9 +104,10 @@ type RuleStatus struct {
 
 // Options are the inputs to Build that do not come from the engine.
 type Options struct {
-	Version string
-	Now     time.Time
-	LLM     bool
+	Version      string
+	Now          time.Time
+	LLM          bool
+	Explanations map[string]string
 }
 
 // Build assembles a report from an engine result. Finding and rule order
@@ -156,10 +157,14 @@ func Build(snap *snapshot.Snapshot, reg *rules.Registry, engine *rules.Engine, r
 	var worst rules.Severity
 	for _, f := range res.Findings {
 		rule, _ := reg.Get(f.RuleID)
+		explanation := Explanation{Text: rule.Description(), Source: SourceRule}
+		if text, ok := opts.Explanations[f.ID]; ok && text != "" {
+			explanation = Explanation{Text: text, Source: SourceLLM}
+		}
 		r.Findings = append(r.Findings, Finding{
 			Finding:     f,
 			Category:    rule.Category(),
-			Explanation: Explanation{Text: rule.Description(), Source: SourceRule},
+			Explanation: explanation,
 		})
 		r.Summary.BySeverity[f.Severity.String()]++
 		worst = max(worst, f.Severity)

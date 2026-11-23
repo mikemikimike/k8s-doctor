@@ -47,7 +47,7 @@ Manifests and cluster state carry environment values, tokens and internal hostna
 - **Masked before any prompt:** annotations, Event messages, hostnames and anything else that may embed identifiers, by a redaction layer that every prompt passes through.
 - **Minimal context:** a prompt contains one finding (or one group) and only the resource fields it references, not the whole snapshot.
 - **`--no-llm`:** the whole pipeline (collect, rules, report) runs with no network calls. Explanations fall back to each rule's static description. The eval harness runs in this mode by default.
-- **Provider-agnostic:** the LLM client is an interface; provider, model and API key come from config or environment. Responses are cached by finding ID and prompt hash so re-runs do not re-bill.
+- **Provider-agnostic:** the LLM client is an interface. Provider and model come from config; endpoint and API key come from fixed environment variables and calls require explicit `--llm` opt-in. Prompts are not cached, so cluster context is not retained between requests or runs.
 
 ## Consequences
 
