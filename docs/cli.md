@@ -22,7 +22,7 @@ Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doc
 - Any refused or failed request fails the run, naming the resource and, for a 403, the missing grant. A partial snapshot would let rules pass on data they never saw.
 - Secrets and ConfigMaps are listed through the metadata API, so their values are never sent to k8s-doctor. In cluster mode the snapshot records their names only, not their key names. `--skip-secrets` leaves Secrets out entirely.
 - `list` on Secrets cluster-wide is a sensitive grant even though k8s-doctor only reads metadata: anything using the same identity could read the values. Bind the ClusterRole only to k8s-doctor, or use `--skip-secrets` and drop the `secrets` entry.
-- Pods, container statuses (init containers included, marked `init`) and Events go into `runtime`. Event messages are kept as controllers wrote them and can include names, URLs or other text you may not want to share; the snapshot's `source.cluster` is your kubeconfig context name. Review a snapshot before sharing it. Each Pod is attributed to its top-level workload (ReplicaSet to Deployment, Job to CronJob). Jobs created by a CronJob are folded into the CronJob rather than listed as workloads.
+- Pods, init container statuses (marked `init`) and Events go into `runtime`. Event messages are kept as controllers wrote them and can include names, URLs or other text you may not want to share; the snapshot's `source.cluster` is your kubeconfig context name. Review a snapshot before sharing it. Each Pod is attributed to its top-level workload (ReplicaSet to Deployment, Job to CronJob). Events retain their involved object and include an optional top-level owner for ReplicaSet or Job events. Jobs created by a CronJob are folded into the CronJob rather than listed as workloads.
 
 ### Manifests mode
 
@@ -52,7 +52,26 @@ Exactly one of `--cluster`, `--manifests` and `--snapshot` is required. `k8s-doc
 | `--fail-on` | `high` | Lowest severity that makes the exit code non-zero: `critical`, `high`, `medium`, `low` or `none`. |
 | `--color` | `auto` | `auto` (only on a terminal, and never when `NO_COLOR` is set), `always` or `never`. |
 | `--explain` | off | Print each finding's explanation under it in text output. |
-| `--no-llm` | off | Never call an LLM. Until the LLM layer lands (#26) every run behaves this way, and the report's `input.llm` is `false`. |
+| `--llm` | off | Send finding context with best-effort, pattern-based redaction to the configured LLM provider. Requires an `llm.provider` in the config; otherwise the command exits with a usage error. |
+| `--no-llm` | off | Never call an LLM; explanations use deterministic rule descriptions and the report's `input.llm` is `false`. |
+
+When `.k8s-doctor.yaml` contains an `llm` block, the `openai-compatible`
+provider (also accepted as `openai`) uses `model`, optional `timeout` and
+`retries`. Set `K8S_DOCTOR_LLM_ENDPOINT` and, when required, the
+`K8S_DOCTOR_LLM_API_KEY` environment variable outside the repository config.
+The endpoint must use HTTPS; HTTP is allowed only for loopback development.
+Provider calls are disabled unless `--llm` is passed, and `--no-llm` always
+disables them. The default request timeout is 30 seconds, with three retries
+using exponential backoff; 429 responses honor `Retry-After` values up to two
+minutes and skip retrying when the requested delay is longer. The explanation
+phase has a two-minute overall deadline. Prompts use best-effort, pattern-based
+credential redaction, include explicit instructions to treat cluster data as
+untrusted, and cap context at 32 KiB. When a workload exceeds the context
+budget, labels and selectors are trimmed first to preserve container, probe
+and resource context where possible.
+Provider errors fall back to the rule description and produce a warning on
+stderr. `input.llm` is true only when at least one generated explanation is
+included in the report. The default configuration is offline.
 
 ## Exit codes
 

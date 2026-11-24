@@ -1,0 +1,5 @@
+description: "A DaemonSet that exposes a hostPort but shares no host namespace."
+kind: near-miss
+rules:
+  - security-host-namespace
+findings: []

@@ -437,9 +437,15 @@ func (col *clusterCollector) collectRuntime(ctx context.Context, ns string, jobs
 		return wrap("events", err)
 	}
 	for i := range events {
-		if col.keep(events[i].Namespace) {
-			rt.Events = append(rt.Events, Event(&events[i]))
+		if !col.keep(events[i].Namespace) {
+			continue
 		}
+		event := Event(&events[i])
+		ownerKey := event.InvolvedObject.Namespace + "/" + event.InvolvedObject.Kind + "/" + event.InvolvedObject.Name
+		if owner, ok := owners[ownerKey]; ok {
+			event.Owner = &owner
+		}
+		rt.Events = append(rt.Events, event)
 	}
 	return nil
 }

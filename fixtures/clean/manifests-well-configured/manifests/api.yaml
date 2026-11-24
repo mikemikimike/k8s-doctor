@@ -12,6 +12,8 @@ spec:
       labels: {app: api}
     spec:
       securityContext: {runAsNonRoot: true}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app: api}}}
       containers:
         - name: api
           image: ghcr.io/acme/api:1.4.2
@@ -25,6 +27,7 @@ spec:
             limits: {memory: 256Mi}
           readinessProbe: {httpGet: {path: /healthz, port: http}}
           livenessProbe: {httpGet: {path: /livez, port: http}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true}
 ---
 apiVersion: v1
 kind: Service

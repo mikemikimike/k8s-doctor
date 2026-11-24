@@ -1,0 +1,5 @@
+description: "A covered 3-replica Deployment, a PDB with an empty selector, a single replica, a DaemonSet, and a PDB of the same name in another namespace that does not count."
+kind: near-miss
+rules:
+  - pdb-missing
+findings: []

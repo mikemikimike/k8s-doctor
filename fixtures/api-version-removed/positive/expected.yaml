@@ -1,0 +1,17 @@
+description: "A Deployment on extensions/v1beta1, a CronJob on batch/v1beta1, a PDB on policy/v1beta1 and an HPA on autoscaling/v2beta2."
+kind: positive
+rules:
+  - api-version-removed
+findings:
+  - rule: api-version-removed
+    resource: Deployment/shop/api
+    field: apiVersion
+  - rule: api-version-removed
+    resource: CronJob/shop/report
+    field: apiVersion
+  - rule: api-version-removed
+    resource: PodDisruptionBudget/shop/api
+    field: apiVersion
+  - rule: api-version-removed
+    resource: HorizontalPodAutoscaler/shop/api
+    field: apiVersion

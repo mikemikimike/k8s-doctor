@@ -1,0 +1,14 @@
+description: "A 3-replica Deployment with no PDB, a StatefulSet whose PDB selects other labels, and a 1-replica Deployment held at 2 by an HPA."
+kind: positive
+rules:
+  - pdb-missing
+findings:
+  - rule: pdb-missing
+    resource: Deployment/shop/web
+    field: spec.selector
+  - rule: pdb-missing
+    resource: StatefulSet/shop/cache
+    field: spec.selector
+  - rule: pdb-missing
+    resource: Deployment/shop/search
+    field: spec.selector

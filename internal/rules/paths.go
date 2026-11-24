@@ -12,3 +12,9 @@ func ContainerPath(w *snapshot.Workload, c *snapshot.Container) string {
 func PodSpecField(w *snapshot.Workload, field string) string {
 	return w.PodSpecPath() + "." + field
 }
+
+// InitContainerPath returns the manifest field path of an init container:
+// spec.template.spec.initContainers[name=migrate].
+func InitContainerPath(w *snapshot.Workload, c *snapshot.Container) string {
+	return w.PodSpecPath() + ".initContainers[name=" + c.Name + "]"
+}

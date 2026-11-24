@@ -1,0 +1,5 @@
+description: "emptyDir, configMap, secret and persistentVolumeClaim volumes, one of them named host."
+kind: near-miss
+rules:
+  - security-host-path
+findings: []

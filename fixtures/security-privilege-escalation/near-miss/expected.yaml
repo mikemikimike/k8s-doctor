@@ -1,0 +1,5 @@
+description: "allowPrivilegeEscalation: false, and a privileged container, which security-privileged reports instead."
+kind: near-miss
+rules:
+  - security-privilege-escalation
+findings: []

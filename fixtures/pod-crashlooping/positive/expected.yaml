@@ -1,0 +1,17 @@
+description: "Two api replicas in CrashLoopBackOff (one finding), a worker between back-offs (running, not ready, 9 restarts), a crashing init container, and a bare pod."
+kind: positive
+rules:
+  - pod-crashlooping
+findings:
+  - rule: pod-crashlooping
+    resource: Deployment/shop/api
+    field: spec.template.spec.containers[name=api]
+  - rule: pod-crashlooping
+    resource: Deployment/shop/worker
+    field: spec.template.spec.containers[name=worker]
+  - rule: pod-crashlooping
+    resource: Deployment/shop/orders
+    field: spec.template.spec.initContainers[name=migrate]
+  - rule: pod-crashlooping
+    resource: Pod/shop/debug
+    field: spec.containers[name=shell]

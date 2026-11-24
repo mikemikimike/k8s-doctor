@@ -1,0 +1,11 @@
+description: "A CPU-utilization HPA over a container with no CPU request, and a memory-utilization HPA over a sidecar with no memory request."
+kind: positive
+rules:
+  - hpa-missing-requests
+findings:
+  - rule: hpa-missing-requests
+    resource: Deployment/shop/web
+    field: spec.template.spec.containers[name=web].resources.requests.cpu
+  - rule: hpa-missing-requests
+    resource: Deployment/shop/api
+    field: spec.template.spec.containers[name=proxy].resources.requests.memory

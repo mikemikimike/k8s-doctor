@@ -56,8 +56,6 @@ func TestGolden(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n"))
-			want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))
 			if !bytes.Equal(got, want) {
 				t.Errorf("snapshot differs from %s; rerun with -update if intended\n%s", golden, got)
 			}

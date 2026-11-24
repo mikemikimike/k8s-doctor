@@ -1,0 +1,14 @@
+description: "A 3-replica Deployment and a 2-replica StatefulSet with no spread, and a single-replica Deployment an HPA keeps at 3."
+kind: positive
+rules:
+  - spread-missing
+findings:
+  - rule: spread-missing
+    resource: Deployment/shop/web
+    field: spec.template.spec.topologySpreadConstraints
+  - rule: spread-missing
+    resource: StatefulSet/shop/cache
+    field: spec.template.spec.topologySpreadConstraints
+  - rule: spread-missing
+    resource: Deployment/shop/search
+    field: spec.template.spec.topologySpreadConstraints

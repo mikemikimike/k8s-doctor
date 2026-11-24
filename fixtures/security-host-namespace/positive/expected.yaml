@@ -1,0 +1,14 @@
+description: "A DaemonSet with hostNetwork and hostPID, and a Deployment with hostIPC."
+kind: positive
+rules:
+  - security-host-namespace
+findings:
+  - rule: security-host-namespace
+    resource: DaemonSet/shop/agent
+    field: spec.template.spec.hostNetwork
+  - rule: security-host-namespace
+    resource: DaemonSet/shop/agent
+    field: spec.template.spec.hostPID
+  - rule: security-host-namespace
+    resource: Deployment/shop/web
+    field: spec.template.spec.hostIPC

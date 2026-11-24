@@ -43,6 +43,12 @@ func TestParseRejectsUnknownKeys(t *testing.T) {
 	if _, err := config.Parse([]byte("rules:\n  x:\n    enable: false\n")); err == nil {
 		t.Error("expected an error for a misspelled rule option")
 	}
+	for _, field := range []string{"endpoint", "apiKeyEnv"} {
+		data := []byte("llm:\n  provider: openai-compatible\n  " + field + ": value\n")
+		if _, err := config.Parse(data); err == nil {
+			t.Errorf("expected repository config field %q to be rejected", field)
+		}
+	}
 }
 
 func TestLoadDefault(t *testing.T) {

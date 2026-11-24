@@ -22,6 +22,18 @@ type Config struct {
 	Rules map[string]RuleConfig `json:"rules,omitempty"`
 	// Drift configures overlay-drift detection (#14).
 	Drift Drift `json:"drift,omitzero"`
+	// LLM configures the optional explanation provider. An empty Provider keeps
+	// the command fully offline and uses rule descriptions.
+	LLM LLM `json:"llm,omitzero"`
+}
+
+// LLM configures an OpenAI-compatible explanation provider. The endpoint and
+// API key are supplied through process environment variables, not this file.
+type LLM struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Timeout  string `json:"timeout,omitempty"`
+	Retries  *int   `json:"retries,omitempty"`
 }
 
 // RuleConfig overrides one rule.

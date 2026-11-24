@@ -1,0 +1,5 @@
+description: "Spread constraints, required and preferred anti-affinity, a single replica, and a DaemonSet."
+kind: near-miss
+rules:
+  - spread-missing
+findings: []

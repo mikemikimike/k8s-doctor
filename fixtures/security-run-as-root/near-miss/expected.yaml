@@ -1,0 +1,5 @@
+description: "runAsNonRoot on the pod only, a non-zero runAsUser without runAsNonRoot, and a container runAsUser overriding a root pod user."
+kind: near-miss
+rules:
+  - security-run-as-root
+findings: []

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "fixtures/pdb-blocks-drain/near-miss"
+  },
+  "spec": {
+    "namespaces": [
+      {
+        "name": "shop"
+      }
+    ],
+    "workloads": [
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "web",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "web"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "web",
+                "image": "ghcr.io/acme/web:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ]
+          }
+        },
+        "replicas": 3,
+        "selector": {
+          "app": "web"
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "api",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "api"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "api",
+                "image": "ghcr.io/acme/api:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ]
+          }
+        },
+        "replicas": 4,
+        "selector": {
+          "app": "api"
+        }
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "web",
+        "namespace": "shop",
+        "selector": {
+          "app": "web"
+        },
+        "minAvailable": "2"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "api",
+        "namespace": "shop",
+        "selector": {
+          "app": "api"
+        },
+        "minAvailable": "50%"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "api-max",
+        "namespace": "shop",
+        "selector": {
+          "app": "api"
+        },
+        "maxUnavailable": "1"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "legacy",
+        "namespace": "shop",
+        "selector": {
+          "app": "legacy"
+        },
+        "minAvailable": "1"
+      }
+    ]
+  }
+}

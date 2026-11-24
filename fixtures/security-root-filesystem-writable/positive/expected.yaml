@@ -1,0 +1,14 @@
+description: "readOnlyRootFilesystem unset, set to false, and no container securityContext."
+kind: positive
+rules:
+  - security-root-filesystem-writable
+findings:
+  - rule: security-root-filesystem-writable
+    resource: Deployment/shop/web
+    field: spec.template.spec.containers[name=web].securityContext.readOnlyRootFilesystem
+  - rule: security-root-filesystem-writable
+    resource: StatefulSet/shop/db
+    field: spec.template.spec.containers[name=db].securityContext.readOnlyRootFilesystem
+  - rule: security-root-filesystem-writable
+    resource: Job/shop/migrate
+    field: spec.template.spec.containers[name=migrate].securityContext.readOnlyRootFilesystem

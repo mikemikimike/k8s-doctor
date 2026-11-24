@@ -1,0 +1,11 @@
+description: "A running api pod whose previous run was OOMKilled, and a worker container currently terminated by OOMKilled."
+kind: positive
+rules:
+  - container-oomkilled
+findings:
+  - rule: container-oomkilled
+    resource: Deployment/shop/api
+    field: spec.template.spec.containers[name=api].resources.limits.memory
+  - rule: container-oomkilled
+    resource: Deployment/shop/worker
+    field: spec.template.spec.containers[name=worker].resources.limits.memory

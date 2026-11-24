@@ -69,9 +69,27 @@
                   }
                 ]
               }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
             ]
           }
         }
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "api",
+        "namespace": "shop",
+        "selector": {
+          "app": "api"
+        },
+        "maxUnavailable": "1"
       }
     ]
   },

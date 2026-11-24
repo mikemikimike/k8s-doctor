@@ -2,6 +2,7 @@ package collector_test
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
@@ -79,6 +80,12 @@ func fakeClients(t *testing.T) (*collector.Clients, *fake.Clientset) {
 			Type:           "Warning", Reason: "BackOff", Message: "Back-off restarting failed container", Count: 12,
 			LastTimestamp: finished,
 		},
+		&corev1.Event{
+			ObjectMeta:     meta("shop", "api-7d9f.1"),
+			InvolvedObject: corev1.ObjectReference{Kind: "ReplicaSet", Namespace: "shop", Name: "api-7d9f"},
+			Type:           "Warning", Reason: "FailedCreate", Message: "ReplicaSet could not create a pod",
+			LastTimestamp: finished,
+		},
 	)
 
 	pom := func(kind, ns, name string) runtime.Object {
@@ -124,8 +131,38 @@ func TestCluster(t *testing.T) {
 	if cs.Init || cs.RestartCount != 7 || cs.Reason != "CrashLoopBackOff" || cs.LastTermination == nil || cs.LastTermination.Reason != "OOMKilled" {
 		t.Errorf("container status = %+v", cs)
 	}
-	if len(s.Runtime.Events) != 1 || s.Runtime.Events[0].Count != 12 || s.Runtime.Events[0].LastSeen.IsZero() {
+	if len(s.Runtime.Events) != 2 {
 		t.Errorf("events = %+v", s.Runtime.Events)
+	} else {
+		var replicaSetEvent *snapshot.Event
+		for i := range s.Runtime.Events {
+			if s.Runtime.Events[i].InvolvedObject.Kind == "ReplicaSet" {
+				replicaSetEvent = &s.Runtime.Events[i]
+			}
+		}
+		wantOwner := snapshot.ResourceRef{Kind: snapshot.KindDeployment, Namespace: "shop", Name: "api"}
+		if replicaSetEvent == nil || replicaSetEvent.Owner == nil || *replicaSetEvent.Owner != wantOwner {
+			t.Errorf("ReplicaSet event owner = %+v, want %s", replicaSetEvent, wantOwner)
+		}
+		if s.Runtime.Events[0].Count != 12 || s.Runtime.Events[0].LastSeen.IsZero() {
+			t.Errorf("Pod event = %+v", s.Runtime.Events[0])
+		}
+	}
+	jsonSnapshot, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := snapshot.Decode(strings.NewReader(string(jsonSnapshot)))
+	if err != nil {
+		t.Fatalf("decode collected snapshot: %v", err)
+	}
+	if decoded.SchemaVersion != snapshot.SchemaVersion {
+		t.Fatalf("schema version = %q, want %q", decoded.SchemaVersion, snapshot.SchemaVersion)
+	}
+	for _, event := range decoded.Runtime.Events {
+		if event.InvolvedObject.Kind == "ReplicaSet" && (event.Owner == nil || event.Owner.String() != "Deployment/shop/api") {
+			t.Fatalf("serialized ReplicaSet event owner = %+v", event.Owner)
+		}
 	}
 
 	raw, err := yaml.Marshal(s)
@@ -203,7 +240,6 @@ func loadRules(t *testing.T, file, kind string) []rbacv1.PolicyRule {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = []byte(strings.ReplaceAll(string(data), "\r\n", "\n"))
 	for _, doc := range strings.Split(string(data), "\n---\n") {
 		var r struct {
 			Kind  string              `json:"kind"`

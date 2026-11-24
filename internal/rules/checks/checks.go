@@ -12,6 +12,8 @@ const (
 	CategoryProbes       = "probes"
 	CategoryImages       = "images"
 	CategoryAvailability = "availability"
+	CategorySecurity     = "security"
+	CategoryHygiene      = "hygiene"
 )
 
 // All returns a new instance of every built-in rule.
@@ -24,6 +26,20 @@ func All() []rules.Rule {
 		newImageTagMutable(),
 		newImagePullPolicyStale(),
 		newSingleReplica(),
+		newPDBMissing(),
+		newPDBBlocksDrain(),
+		newRunAsRoot(),
+		newPrivileged(),
+		newPrivilegeEscalation(),
+		newRootFilesystemWritable(),
+		newHostPath(),
+		newHostNamespace(),
+		newDefaultNamespace(),
+		newPodCrashlooping(),
+		newContainerOOMKilled(),
+		newSpreadMissing(),
+		newHPAMissingRequests(),
+		newAPIRemoved(),
 	}
 }
 
@@ -58,6 +74,22 @@ func eachContainer(s *snapshot.Snapshot, keep func(*snapshot.Workload) bool, fn 
 		}
 		for j := range w.Template.Spec.Containers {
 			fn(w, &w.Template.Spec.Containers[j])
+		}
+	}
+}
+
+// eachPodContainer calls fn for every init and regular container of every
+// workload, with the container's manifest field path.
+func eachPodContainer(s *snapshot.Snapshot, fn func(w *snapshot.Workload, c *snapshot.Container, path string)) {
+	for i := range s.Spec.Workloads {
+		w := &s.Spec.Workloads[i]
+		for j := range w.Template.Spec.InitContainers {
+			c := &w.Template.Spec.InitContainers[j]
+			fn(w, c, rules.InitContainerPath(w, c))
+		}
+		for j := range w.Template.Spec.Containers {
+			c := &w.Template.Spec.Containers[j]
+			fn(w, c, rules.ContainerPath(w, c))
 		}
 	}
 }

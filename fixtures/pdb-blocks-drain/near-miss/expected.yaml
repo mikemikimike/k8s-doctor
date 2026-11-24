@@ -1,0 +1,5 @@
+description: "minAvailable below replicas, a percentage minAvailable, maxUnavailable 1, and an integer minAvailable whose workload is not in the snapshot."
+kind: near-miss
+rules:
+  - pdb-blocks-drain
+findings: []

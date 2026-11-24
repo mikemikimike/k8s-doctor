@@ -1,0 +1,17 @@
+description: "maxUnavailable 0, minAvailable 100%, minAvailable equal to replicas, and minAvailable equal to an HPA's minReplicas."
+kind: positive
+rules:
+  - pdb-blocks-drain
+findings:
+  - rule: pdb-blocks-drain
+    resource: PodDisruptionBudget/shop/web
+    field: spec.maxUnavailable
+  - rule: pdb-blocks-drain
+    resource: PodDisruptionBudget/shop/api
+    field: spec.minAvailable
+  - rule: pdb-blocks-drain
+    resource: PodDisruptionBudget/shop/orders
+    field: spec.minAvailable
+  - rule: pdb-blocks-drain
+    resource: PodDisruptionBudget/shop/search
+    field: spec.minAvailable
