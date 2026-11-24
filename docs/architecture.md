@@ -26,7 +26,7 @@ flowchart LR
 | Manifest / kustomize collector | `internal/collector` | #8 | Done |
 | Cross-mode collector tests | `internal/collector` | #9 | Done (the real-API-server half runs in the kind CI job) |
 | Rule engine, severity, finding IDs, config | `internal/rules`, `internal/config` | #10 | Done |
-| Built-in rules | `internal/rules/checks` | #11, #12, #13 | Batch 1 done |
+| Built-in rules | `internal/rules/checks` | #11, #12, #13 | Batches 1 and 2 done |
 | Fixtures and runner | `fixtures/`, `internal/fixtures` | #15 | Done |
 | Overlay drift | — | #14, #28–#30 | Planned |
 | LLM client, redaction, `--no-llm` | `internal/llm` | #26 | Implemented |

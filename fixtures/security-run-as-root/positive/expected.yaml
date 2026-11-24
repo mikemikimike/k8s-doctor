@@ -1,0 +1,17 @@
+description: "No securityContext anywhere, runAsNonRoot: false on the container overriding the pod, runAsUser: 0, and a root init container."
+kind: positive
+rules:
+  - security-run-as-root
+findings:
+  - rule: security-run-as-root
+    resource: Deployment/shop/web
+    field: spec.template.spec.containers[name=web].securityContext.runAsNonRoot
+  - rule: security-run-as-root
+    resource: Deployment/shop/api
+    field: spec.template.spec.containers[name=api].securityContext.runAsNonRoot
+  - rule: security-run-as-root
+    resource: Job/shop/migrate
+    field: spec.template.spec.containers[name=migrate].securityContext.runAsNonRoot
+  - rule: security-run-as-root
+    resource: Deployment/shop/orders
+    field: spec.template.spec.initContainers[name=setup].securityContext.runAsNonRoot

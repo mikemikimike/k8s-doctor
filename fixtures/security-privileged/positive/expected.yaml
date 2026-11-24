@@ -1,0 +1,11 @@
+description: "A privileged DaemonSet container and a privileged init container."
+kind: positive
+rules:
+  - security-privileged
+findings:
+  - rule: security-privileged
+    resource: DaemonSet/shop/agent
+    field: spec.template.spec.containers[name=agent].securityContext.privileged
+  - rule: security-privileged
+    resource: Deployment/shop/web
+    field: spec.template.spec.initContainers[name=sysctl].securityContext.privileged

@@ -1,0 +1,14 @@
+description: "allowPrivilegeEscalation unset, set to true, and no container securityContext at all, including in a CronJob."
+kind: positive
+rules:
+  - security-privilege-escalation
+findings:
+  - rule: security-privilege-escalation
+    resource: Deployment/shop/web
+    field: spec.template.spec.containers[name=web].securityContext.allowPrivilegeEscalation
+  - rule: security-privilege-escalation
+    resource: Deployment/shop/api
+    field: spec.template.spec.containers[name=api].securityContext.allowPrivilegeEscalation
+  - rule: security-privilege-escalation
+    resource: CronJob/shop/report
+    field: spec.jobTemplate.spec.template.spec.containers[name=report].securityContext.allowPrivilegeEscalation

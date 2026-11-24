@@ -1,0 +1,11 @@
+description: "A Deployment and a CronJob in the default namespace."
+kind: positive
+rules:
+  - namespace-default
+findings:
+  - rule: namespace-default
+    resource: Deployment/default/web
+    field: metadata.namespace
+  - rule: namespace-default
+    resource: CronJob/default/report
+    field: metadata.namespace

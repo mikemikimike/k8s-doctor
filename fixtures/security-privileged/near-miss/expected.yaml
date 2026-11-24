@@ -1,0 +1,5 @@
+description: "privileged: false set explicitly, and a container that adds NET_ADMIN without being privileged."
+kind: near-miss
+rules:
+  - security-privileged
+findings: []

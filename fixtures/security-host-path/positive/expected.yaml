@@ -1,0 +1,11 @@
+description: "A DaemonSet mounting the container runtime socket and a Deployment mounting /var/log."
+kind: positive
+rules:
+  - security-host-path
+findings:
+  - rule: security-host-path
+    resource: DaemonSet/shop/agent
+    field: spec.template.spec.volumes[name=runtime].hostPath
+  - rule: security-host-path
+    resource: Deployment/shop/web
+    field: spec.template.spec.volumes[name=logs].hostPath

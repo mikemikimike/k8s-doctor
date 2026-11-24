@@ -1,0 +1,5 @@
+description: "Workloads in namespaces named like default but not it: default-apps and app-default."
+kind: near-miss
+rules:
+  - namespace-default
+findings: []

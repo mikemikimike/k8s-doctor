@@ -1,0 +1,5 @@
+description: "A read-only root filesystem with an emptyDir mounted where the process writes."
+kind: near-miss
+rules:
+  - security-root-filesystem-writable
+findings: []

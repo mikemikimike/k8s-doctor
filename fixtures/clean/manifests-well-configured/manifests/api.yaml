@@ -25,6 +25,7 @@ spec:
             limits: {memory: 256Mi}
           readinessProbe: {httpGet: {path: /healthz, port: http}}
           livenessProbe: {httpGet: {path: /livez, port: http}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true}
 ---
 apiVersion: v1
 kind: Service

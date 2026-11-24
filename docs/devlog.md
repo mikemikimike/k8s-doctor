@@ -2,6 +2,15 @@
 
 Short notes on what was built and what was learned, newest first.
 
+## 2026-11-20: Rules batch 2: PDBs, securityContext, risky defaults
+
+- Nine rules: `pdb-missing`, `pdb-blocks-drain`, four securityContext rules (root, privileged, privilege escalation, writable root filesystem), `security-host-path`, `security-host-namespace` and `namespace-default`.
+- PDB rules use the fewest replicas a workload can run: its HPA's `minReplicas` when one targets it. A `minAvailable: 2` PDB on a Deployment the HPA can scale down to 2 blocks drains at exactly that moment.
+- The snapshot keeps only a PDB's `matchLabels`, so a PDB that selects with `matchExpressions` alone looks like it selects everything. That can hide a missing PDB but never invent one, which is the right way to be wrong for a default-on rule.
+- Security rules cover init containers too, and treat container fields as overriding pod fields one by one, as the kubelet does. A privileged container is reported once, by `security-privileged`, rather than also as privilege escalation.
+- The clean fixtures had to be hardened to stay clean, which is itself a useful check that the rules are satisfiable with ordinary manifests.
+- Thresholds (2 replicas for HA) are constants for now; rule parameters arrive with #45.
+
 ## 2026-11-16: Cross-mode collector tests
 
 - One set of manifests (`internal/collector/testdata/crossmode`, all five workload kinds plus Service, PDB, HPA, Secret and ConfigMap) is collected in manifest mode and, after `kubectl apply` in kind, in cluster mode. The `spec` sections must match once server defaults are accounted for.
