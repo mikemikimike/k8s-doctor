@@ -12,6 +12,8 @@ spec:
       labels: {app: api}
     spec:
       securityContext: {runAsNonRoot: true}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app: api}}}
       containers:
         - name: api
           image: ghcr.io/acme/api:1.4.2

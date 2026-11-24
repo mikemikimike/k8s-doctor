@@ -20,6 +20,11 @@ Run `k8s-doctor rules` for the list built into your binary.
 | `security-host-path` | security | high | manifest, cluster | A `hostPath` volume. |
 | `security-host-namespace` | security | high | manifest, cluster | A pod with `hostNetwork`, `hostPID` or `hostIPC` set to true, one finding per field. |
 | `namespace-default` | hygiene | low | manifest, cluster | A workload in the `default` namespace, including manifests with no namespace that no overlay sets. |
+| `pod-crashlooping` | availability | high | cluster | A container in `CrashLoopBackOff`, or not ready with 5 or more restarts. A ready container is not judged by its restart count, which never resets. Pods are grouped by owning workload and container, so two crashing replicas give one finding; evidence lists the first 5 pod names and the full count. |
+| `container-oomkilled` | resources | high | cluster | A container whose current or last termination was `OOMKilled`. Points at its memory limit. The last termination is kept until the container exits again, so `lastOOMKilledAt` in the evidence says how old the kill is. |
+| `spread-missing` | availability | low | manifest, cluster | A Deployment or StatefulSet running at least 2 replicas with no `topologySpreadConstraints` and no pod anti-affinity. Low, because the scheduler's default spreading already applies. |
+| `hpa-missing-requests` | resources | high | manifest, cluster | An HPA that scales on CPU or memory utilization while a container of its target has no request for that resource, so the HPA cannot compute utilization. A limit counts as a request. Every HPA on a target is checked. LimitRange default requests are not seen. |
+| `api-version-removed` | hygiene | high | manifest | A manifest written against an API version Kubernetes has removed (for example `extensions/v1beta1` Deployments, `policy/v1beta1` PDBs, `autoscaling/v2beta2` HPAs), from a static table. Cluster mode is skipped: the API server answers at whatever version is asked for. |
 
 ## Configuring rules
 

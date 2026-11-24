@@ -35,6 +35,11 @@ func All() []rules.Rule {
 		newHostPath(),
 		newHostNamespace(),
 		newDefaultNamespace(),
+		newPodCrashlooping(),
+		newContainerOOMKilled(),
+		newSpreadMissing(),
+		newHPAMissingRequests(),
+		newAPIRemoved(),
 	}
 }
 

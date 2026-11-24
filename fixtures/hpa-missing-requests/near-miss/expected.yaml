@@ -1,0 +1,5 @@
+description: "A CPU limit without a request (copied into the request), an AverageValue target that needs no request, and an HPA on another Deployment."
+kind: near-miss
+rules:
+  - hpa-missing-requests
+findings: []

@@ -69,6 +69,13 @@
                   }
                 ]
               }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
             ]
           }
         }

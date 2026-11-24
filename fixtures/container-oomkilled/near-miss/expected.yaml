@@ -1,0 +1,5 @@
+description: "Exit code 137 from a kill that was not an OOM (Error), and a container whose last run Completed."
+kind: near-miss
+rules:
+  - container-oomkilled
+findings: []

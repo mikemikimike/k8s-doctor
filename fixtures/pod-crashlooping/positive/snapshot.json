@@ -1,0 +1,389 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "cluster",
+  "source": {
+    "cluster": "kind-k8s-doctor"
+  },
+  "spec": {
+    "namespaces": [
+      {
+        "name": "shop"
+      }
+    ],
+    "workloads": [
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "api",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "api"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "api",
+                "image": "ghcr.io/acme/api:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
+            ]
+          }
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "api"
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "worker",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "worker"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "worker",
+                "image": "ghcr.io/acme/worker:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
+            ]
+          }
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "worker"
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "orders",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "orders"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "orders",
+                "image": "ghcr.io/acme/orders:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "initContainers": [
+              {
+                "name": "migrate",
+                "image": "ghcr.io/acme/migrate:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
+            ]
+          }
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "orders"
+        }
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "api",
+        "namespace": "shop",
+        "selector": {
+          "app": "api"
+        },
+        "maxUnavailable": "1"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "worker",
+        "namespace": "shop",
+        "selector": {
+          "app": "worker"
+        },
+        "maxUnavailable": "1"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "orders",
+        "namespace": "shop",
+        "selector": {
+          "app": "orders"
+        },
+        "maxUnavailable": "1"
+      }
+    ]
+  },
+  "runtime": {
+    "pods": [
+      {
+        "name": "api-7d9f-a",
+        "namespace": "shop",
+        "phase": "Running",
+        "nodeName": "worker-1",
+        "containers": [
+          {
+            "name": "api",
+            "ready": false,
+            "restartCount": 7,
+            "state": "waiting",
+            "reason": "CrashLoopBackOff",
+            "lastTermination": {
+              "reason": "Error",
+              "exitCode": 1,
+              "finishedAt": "2026-11-20T09:00:00Z"
+            }
+          }
+        ],
+        "owner": {
+          "kind": "Deployment",
+          "namespace": "shop",
+          "name": "api"
+        }
+      },
+      {
+        "name": "api-7d9f-b",
+        "namespace": "shop",
+        "phase": "Running",
+        "nodeName": "worker-1",
+        "containers": [
+          {
+            "name": "api",
+            "ready": false,
+            "restartCount": 6,
+            "state": "waiting",
+            "reason": "CrashLoopBackOff",
+            "lastTermination": {
+              "reason": "Error",
+              "exitCode": 1,
+              "finishedAt": "2026-11-20T09:00:00Z"
+            }
+          }
+        ],
+        "owner": {
+          "kind": "Deployment",
+          "namespace": "shop",
+          "name": "api"
+        }
+      },
+      {
+        "name": "worker-5c8b-a",
+        "namespace": "shop",
+        "phase": "Running",
+        "nodeName": "worker-1",
+        "containers": [
+          {
+            "name": "worker",
+            "ready": false,
+            "restartCount": 9,
+            "state": "running",
+            "lastTermination": {
+              "reason": "Error",
+              "exitCode": 1,
+              "finishedAt": "2026-11-20T09:00:00Z"
+            }
+          }
+        ],
+        "owner": {
+          "kind": "Deployment",
+          "namespace": "shop",
+          "name": "worker"
+        }
+      },
+      {
+        "name": "orders-6f7a-a",
+        "namespace": "shop",
+        "phase": "Pending",
+        "nodeName": "worker-1",
+        "containers": [
+          {
+            "name": "migrate",
+            "ready": false,
+            "restartCount": 3,
+            "state": "waiting",
+            "init": true,
+            "reason": "CrashLoopBackOff",
+            "lastTermination": {
+              "reason": "Error",
+              "exitCode": 1,
+              "finishedAt": "2026-11-20T09:00:00Z"
+            }
+          },
+          {
+            "name": "orders",
+            "ready": false,
+            "restartCount": 0,
+            "state": "waiting",
+            "reason": "PodInitializing"
+          }
+        ],
+        "owner": {
+          "kind": "Deployment",
+          "namespace": "shop",
+          "name": "orders"
+        }
+      },
+      {
+        "name": "debug",
+        "namespace": "shop",
+        "phase": "Running",
+        "nodeName": "worker-1",
+        "containers": [
+          {
+            "name": "shell",
+            "ready": false,
+            "restartCount": 12,
+            "state": "waiting",
+            "reason": "CrashLoopBackOff",
+            "lastTermination": {
+              "reason": "Completed",
+              "exitCode": 1,
+              "finishedAt": "2026-11-20T09:00:00Z"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

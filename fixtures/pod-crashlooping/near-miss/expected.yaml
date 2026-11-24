@@ -1,0 +1,5 @@
+description: "A few restarts below the threshold, a container waiting on an image pull, a ready container with 12 old restarts, and a completed Job pod."
+kind: near-miss
+rules:
+  - pod-crashlooping
+findings: []

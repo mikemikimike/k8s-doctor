@@ -1,0 +1,5 @@
+description: "The current versions of the same kinds, plus an HPA on autoscaling/v1, which is still served."
+kind: near-miss
+rules:
+  - api-version-removed
+findings: []

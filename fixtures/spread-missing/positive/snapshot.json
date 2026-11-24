@@ -1,0 +1,224 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "fixtures/spread-missing/positive"
+  },
+  "spec": {
+    "namespaces": [
+      {
+        "name": "shop"
+      }
+    ],
+    "workloads": [
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "web",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "web"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "web",
+                "image": "ghcr.io/acme/web:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ]
+          }
+        },
+        "replicas": 3,
+        "selector": {
+          "app": "web"
+        }
+      },
+      {
+        "kind": "StatefulSet",
+        "apiVersion": "apps/v1",
+        "name": "cache",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "cache"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "cache",
+                "image": "ghcr.io/acme/cache:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ]
+          }
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "cache"
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "search",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "search"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "search",
+                "image": "ghcr.io/acme/search:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ]
+          }
+        },
+        "replicas": 1,
+        "selector": {
+          "app": "search"
+        }
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "web",
+        "namespace": "shop",
+        "selector": {
+          "app": "web"
+        },
+        "maxUnavailable": "1"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "cache",
+        "namespace": "shop",
+        "selector": {
+          "app": "cache"
+        },
+        "maxUnavailable": "1"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "search",
+        "namespace": "shop",
+        "selector": {
+          "app": "search"
+        },
+        "maxUnavailable": "1"
+      }
+    ],
+    "horizontalPodAutoscalers": [
+      {
+        "apiVersion": "autoscaling/v2",
+        "name": "search",
+        "namespace": "shop",
+        "targetRef": {
+          "kind": "Deployment",
+          "name": "search"
+        },
+        "maxReplicas": 6,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": "cpu",
+            "target": "Utilization"
+          }
+        ],
+        "minReplicas": 3
+      }
+    ]
+  }
+}

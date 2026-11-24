@@ -1,0 +1,243 @@
+{
+  "schemaVersion": "v1alpha1",
+  "mode": "manifest",
+  "source": {
+    "path": "fixtures/api-version-removed/near-miss"
+  },
+  "spec": {
+    "namespaces": [
+      {
+        "name": "shop"
+      }
+    ],
+    "workloads": [
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "api",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "api"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "api",
+                "image": "ghcr.io/acme/api:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
+            ]
+          }
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "api"
+        }
+      },
+      {
+        "kind": "Deployment",
+        "apiVersion": "apps/v1",
+        "name": "web",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "web"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "web",
+                "image": "ghcr.io/acme/web:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "topologySpreadConstraints": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "maxSkew": 1,
+                "whenUnsatisfiable": "ScheduleAnyway"
+              }
+            ]
+          }
+        },
+        "replicas": 2,
+        "selector": {
+          "app": "web"
+        }
+      },
+      {
+        "kind": "CronJob",
+        "apiVersion": "batch/v1",
+        "name": "report",
+        "namespace": "shop",
+        "template": {
+          "labels": {
+            "app": "report"
+          },
+          "spec": {
+            "securityContext": {
+              "runAsNonRoot": true
+            },
+            "containers": [
+              {
+                "name": "report",
+                "image": "ghcr.io/acme/report:1.0.0",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "memory": "256Mi"
+                  }
+                },
+                "readinessProbe": {
+                  "handler": "httpGet",
+                  "path": "/healthz",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "handler": "httpGet",
+                  "path": "/livez",
+                  "port": "8080",
+                  "periodSeconds": 10
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "podDisruptionBudgets": [
+      {
+        "apiVersion": "policy/v1",
+        "name": "api",
+        "namespace": "shop",
+        "selector": {
+          "app": "api"
+        },
+        "maxUnavailable": "1"
+      },
+      {
+        "apiVersion": "policy/v1",
+        "name": "web",
+        "namespace": "shop",
+        "selector": {
+          "app": "web"
+        },
+        "maxUnavailable": "1"
+      }
+    ],
+    "horizontalPodAutoscalers": [
+      {
+        "apiVersion": "autoscaling/v2",
+        "name": "api",
+        "namespace": "shop",
+        "targetRef": {
+          "kind": "Deployment",
+          "name": "api"
+        },
+        "maxReplicas": 6,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": "cpu",
+            "target": "Utilization"
+          }
+        ],
+        "minReplicas": 2
+      },
+      {
+        "apiVersion": "autoscaling/v1",
+        "name": "web",
+        "namespace": "shop",
+        "targetRef": {
+          "kind": "Deployment",
+          "name": "web"
+        },
+        "maxReplicas": 6,
+        "metrics": [
+          {
+            "type": "Resource",
+            "resource": "cpu",
+            "target": "Utilization"
+          }
+        ],
+        "minReplicas": 2
+      }
+    ]
+  }
+}
